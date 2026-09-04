@@ -4,6 +4,8 @@
 
 通用规范见：[`skills/geo-ai-citation-gallery/SKILL.md`](skills/geo-ai-citation-gallery/SKILL.md)。
 
+画面 / 媒体抓取说明见 skill 中 **「画面与媒体抓取（重要：其他 AI 必读）」** 一节，以及 [`skills/geo-ai-citation-gallery/assets/capture-pipeline.md`](skills/geo-ai-citation-gallery/assets/capture-pipeline.md)。
+
 ## 安装（Cursor / Grok Bot）
 
 ```bash
@@ -21,6 +23,7 @@ npx skills add skychentian/geo-ai-citation-gallery-skill --skill geo-ai-citation
 | `skills/geo-ai-citation-gallery/SKILL.md` | 通用交付规范 |
 | `skills/geo-ai-citation-gallery/assets/template.html` | 可套用的完整画廊模板 |
 | `skills/geo-ai-citation-gallery/assets/feature-stats.schema.md` | STATS / data 字段说明 |
+| `skills/geo-ai-citation-gallery/assets/capture-pipeline.md` | 抖音/短视频画面+互动抓取流水线 |
 
 ## 依赖
 
