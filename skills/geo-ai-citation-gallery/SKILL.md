@@ -40,20 +40,31 @@ description: >-
    - **口播**：尽量单独提取口播文案；抓不到标「暂未抓取到」，**禁止用发布文案冒充口播文案**。
    - 长发布文案不要塞进标题字段。
 
-3. **抓画面（免登录公开页）**  
-   **主路径是「进页抽媒体 URL 再 HTTP 下载」，不是纯无头整页截屏。**
+3. **抓画面（脚本 + 浏览器，已验证）**  
+   **成品图来自脚本 HTTP 下载，不是浏览器截屏文件。** 主路径：浏览器只负责**捞媒体 URL**，本机 `capture_server.py` 负责下载落盘 / ffmpeg 抽帧。
 
-   - **下图片/视频本身**：不是浏览器整页截屏。打开公开页后把图床/视频地址捞出来，用 HTTP 下载（口播再 `ffmpeg` 抽帧）。这一步无所谓有头无头。  
-   - **打开抖音页**：需要浏览器自动化；有头可看、遇登录/验证码方便人接手；无头在公开页能开且能捞到媒体 URL 时往往够用。  
-   - **skill 不绑死**：有浏览器自动化即可；**无头优先**；遇墙再转有头或人工。  
-   - 流程：浏览器开抖音**公开分享页** → 从 DOM/网络捞图床或视频媒体 URL（不是创作者后台）→ 本机 HTTP 下载。  
-   - 图文：存多帧；口播：下载 mp4 后 `ffmpeg` 抽前几帧，可回退 poster/封面。  
-   - 落盘：`shots/NN_k.png`（`NN`=排名两位，`k`=帧序号）。  
-   - 下载头：常见 `User-Agent` + `Referer: https://www.douyin.com/`（缺 Referer 易 403）。  
-   - 进度写入 `capture_progress`（成功/失败原因）；页面用「暂未抓取到」/缺口。  
-   - **遇登录墙/验证码：停，转人工或跳过该条，禁止假图、禁止绕过。**  
-   - 已知失败：CDN 403、页面不暴露可下载视频地址、只抓到部分帧/仅封面——写 progress，已有帧照常展示。  
-   - 无浏览器/脚本时：不要硬编截图，一律标「暂未抓取到」。
+   | 角色 | 工具 | 做什么 |
+   |------|------|--------|
+   | **A 本机脚本** | `assets/scripts/capture_server.py` | 接收 URL，带 Referer+UA 下载落盘；图文存 PNG；口播 ffmpeg 抽帧；写 `shots/`、`work/capture_progress.txt`、`work/metadata.jsonl` |
+   | **B 浏览器代理** | Chrome / Antigravity `/browser` / 无头均可 | 打开每条**公开分享页**，用 `page_hook.example.js` 或等价逻辑**捞媒体 URL**，再 `fetch` 本机 `127.0.0.1:8765`；**不是**靠整页截图当成品 |
+
+   **逐步清单（执行 AI 照做）：**
+
+   1. 依赖：`pip install pillow`（若需）；确认 `ffmpeg` 在 PATH（口播抽帧）。单 URL 可先：`python assets/scripts/download_one.py '<cdn-url>' --png /tmp/t.png`。
+   2. 启动接收服务（绑 `127.0.0.1:8765`，勿对公网暴露）：
+      ```bash
+      CAPTURE_PROJECT=/path/to/<PROJECT> python assets/scripts/capture_server.py
+      ```
+      默认 `CAPTURE_PROJECT` = `./capture_out`。会建 `<PROJECT>/shots/` 与 `<PROJECT>/work/`。
+   3. 对清单**每条**公开分享 URL：
+      - B 打开页面（**无头优先**；遇登录墙/验证码 → 停该条，转有头或人工，禁止绕过、禁止假图）。
+      - 运行 `assets/scripts/page_hook.example.js`（改 `RANK` / `KIND`）或等价逻辑：从 `<img>`、背景图、`video`/`source`、`performance.getEntries`、网络里常见 `douyincdn` / `*.byteicdn` 等收集 URL（通用提示，勿写死易失效私有 API）。
+      - 图文：`kind=image`；口播：`kind=video` + 可选 `poster`。
+      - 依次打本机：`/meta` → 多条 `/media` → `/finish`（协议见脚本头注释；与现网一致）。
+   4. 检查 `<PROJECT>/shots/NN_*.png` 与 `work/capture_progress.txt`（成功/失败原因）。部分帧 / 仅封面也写 progress，已有帧照常展示。
+   5. 拷到画廊：`shots/*.png` → `gallery/images/`（或模板约定路径）。
+
+   **强调**：Antigravity 等有浏览器的 AI 按上表分工即可——浏览器捞 URL，脚本出 PNG。无浏览器/脚本时不要硬编截图，一律「暂未抓取到」。细节与失败表见 `assets/capture-pipeline.md`。
 
 4. **抓互动**  
    尽量抓：粉丝、赞、藏、转、评、时长秒（口播）或图文页数。  
@@ -104,7 +115,7 @@ description: >-
 - **图表**：每图一句 takeaway；相关统计非主结论  
 - **详情卡**：短标题；发布文案三行可展开；口播另展示口播文案（有则显示）；粉丝+赞藏转；画面+原链；video id 弱化  
 - **时长**：口播秒 / 图文页数；缺数据标缺口  
-- **抓画面**：主路径=进页抽媒体 URL + HTTP 下载；无头优先，遇墙转有头/人工；不是纯无头整页截屏  
+- **抓画面**：脚本下载成品（`assets/scripts/capture_server.py`）+ 浏览器只捞 URL；无头优先；不是整页截屏当成品  
 - **UI**：晨光陶瓷 tokens；`.card .num` 只用于大数字卡，表格须单独控字号  
 - **禁止**：编造帧图/互动数；把失败当 0；绕过登录墙；用发布文案冒充口播文案
 
@@ -124,6 +135,7 @@ description: >-
 
 仅调试 / 深挖时打开，**正常按上面步骤即可，队友不用读**：
 
-- `assets/capture-pipeline.md` — 抓取伪代码与本机小服务细节  
+- `assets/capture-pipeline.md` — 抓画面执行手册（链到 `assets/scripts/`）
+- `assets/scripts/capture_server.py` / `page_hook.example.js` — 可直接跑的接收服务与浏览器钩子示例  
 - `assets/feature-stats.schema.md` — STATS / data 字段表  
 - 版式示例：[still-mill-xbe8.here.now](https://still-mill-xbe8.here.now/) — 仅交互参考，非默认客户内容

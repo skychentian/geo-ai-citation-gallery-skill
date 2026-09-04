@@ -17,3 +17,7 @@ npx skills add skychentian/geo-ai-citation-gallery-skill --skill geo-ai-citation
 ```
 
 AI 会按 skill 里的端到端步骤自己跑完。**不用读 capture 文档，不用翻一堆 md。**
+
+## 抓画面
+
+抓图详情见 skill 步骤 3「抓画面（脚本 + 浏览器，已验证）」+ `skills/geo-ai-citation-gallery/assets/scripts/`（`capture_server.py` / `page_hook.example.js`）。成品图来自脚本下载，不是浏览器截屏。

@@ -1,16 +1,16 @@
-# 画面与媒体抓取流水线（抖音 / 短视频）
+# 抓画面执行手册（推荐其他 AI 打开）
 
-> **可选深读 / 仅调试用。** 正常交付按主 `SKILL.md` 第 2 节步骤即可；队友不用先读本文。下文是画面抓取伪代码与本机小服务细节。
+> **给 Antigravity / 其它执行 AI 的操作手册。** 可运行脚本在 [`scripts/`](scripts/)：`capture_server.py`、`page_hook.example.js`、`download_one.py`。  
+> 主流程摘要仍见 [`SKILL.md`](../SKILL.md) 第 2 节第 3 步「抓画面（脚本 + 浏览器，已验证）」。
 
-
-本文是主 [`SKILL.md`](../SKILL.md) 第 2 节第 3 步「抓画面」的展开说明。目标：在**尽量免账号登录**的前提下，拿到详情卡用的画面帧与可选互动元数据。成功率不保证；失败标缺口，禁止编造。
+目标：在**尽量免账号登录**的前提下，拿到详情卡用的画面帧与可选互动元数据。**成品图来自脚本下载，不是浏览器截屏。** 成功率不保证；失败标缺口，禁止编造。
 
 ## 与交付物的分工
 
 | 步骤 | 产物 | 谁做 | 登录抖音？ |
 |------|------|------|------------|
 | A. 引用清单 | TopN URL、应用次数 / 应用率 | 读 GEO 诊断包（xlsx/csv） | **否** |
-| B. 画面 + 部分 meta | `shots/`、metadata JSONL、`capture_progress` | 浏览器 + 本机小服务 / 脚本 | 多数公开分享页可未登录；遇墙则停 |
+| B. 画面 + 部分 meta | `shots/`、metadata JSONL、`capture_progress` | **A** `scripts/capture_server.py` + **B** 浏览器捞 URL（见 SKILL 步骤 3） | 多数公开分享页可未登录；遇墙则停 |
 | C. 互动补全 | `engagement.json`（赞/藏/转/粉/时长等） | 同 B，或人工补 | 同上；空 / 假 0 需重试或排除出图 |
 | D. 出页 | 套 `template.html` → `index.html` | 任意能读 skill 的 AI | 不需要 |
 
@@ -87,110 +87,36 @@
 - 无帧 / 失败 → **「暂未抓取到」** 或缺口标注
 - **禁止**编造帧图、假互动数；真实 `0` 与缺失必须分开（见 SKILL 数字口径）
 
-## 本机接收服务（简化思路 / 伪代码）
+## 可运行脚本（不要再抄伪代码）
 
-实操可用本机 `127.0.0.1` HTTP 小服务：浏览器书签 / 控制台把 meta 与 media URL POST/GET 过来，服务端下载并抽帧。以下为**通用占位版**，无密钥、无客户路径。
+路径均相对 skill 包根下的 `assets/`：
 
-```python
-# 伪代码：capture_server 思路（勿提交真实客户 BASE 路径）
-import http.server, json, os, urllib.request, subprocess
+| 文件 | 作用 |
+|------|------|
+| [`scripts/capture_server.py`](scripts/capture_server.py) | 本机 `127.0.0.1:8765`：`/meta` `/media` `/finish`；Referer+UA 下载；图文 PNG；口播 ffmpeg 抽帧；写 `shots/`、`work/capture_progress.txt`、`work/metadata.jsonl` |
+| [`scripts/page_hook.example.js`](scripts/page_hook.example.js) | 浏览器控制台/注入：从 `<img>`、背景、`video`、performance、常见 CDN 提示捞 URL，再 fetch 本机 |
+| [`scripts/download_one.py`](scripts/download_one.py) | 单条 URL 带 Referer 试下载（可选） |
 
-PROJECT = os.environ.get("CAPTURE_PROJECT", "./capture_out")
-SHOTS = os.path.join(PROJECT, "shots")
-WORK = os.path.join(PROJECT, "work")
-os.makedirs(SHOTS, exist_ok=True)
-os.makedirs(WORK, exist_ok=True)
+### 启动
 
-pending = {}  # rank -> {kind, media[], poster, ...meta}
-
-def fetch(url: str) -> bytes:
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0",
-            "Referer": "https://www.douyin.com/",
-        },
-    )
-    return urllib.request.urlopen(req, timeout=25).read()
-
-def finish(rank: int) -> dict:
-    d = pending.pop(rank, {"rank": rank})
-    kind = d.get("kind")
-    media = d.get("media") or []
-    files, errs = [], []
-
-    if kind == "image":
-        for i, u in enumerate(dict.fromkeys(media), 1):
-            try:
-                save_png(fetch(u), f"{SHOTS}/{rank:02d}_{i}.png")
-                files.append(f"{rank:02d}_{i}.png")
-            except Exception:
-                errs.append(f"img{i}")  # 常见：CDN 403
-
-    elif kind == "video":
-        v = media[0] if media else ""
-        if not v:
-            errs.append("no_video")
-        else:
-            tmp = f"{WORK}/tmp_{rank}.mp4"
-            try:
-                open(tmp, "wb").write(fetch(v))
-                # 抽前几帧；也可 select=eq(n\,0)+eq(n\,1)
-                subprocess.run(
-                    [
-                        "ffmpeg", "-loglevel", "error", "-y", "-i", tmp,
-                        "-vf", "select=eq(n\\,0)+eq(n\\,1)",
-                        "-vsync", "vfr",
-                        f"{SHOTS}/{rank:02d}_%d.png",
-                    ],
-                    timeout=45,
-                    check=False,
-                )
-                files = sorted(
-                    x for x in os.listdir(SHOTS)
-                    if x.startswith(f"{rank:02d}_") and x.endswith(".png")
-                )
-                if len(files) < 2 and d.get("poster"):
-                    try:
-                        save_png(fetch(d["poster"]), f"{SHOTS}/{rank:02d}_1.png")
-                        files = [f"{rank:02d}_1.png"]
-                    except Exception:
-                        pass
-            except Exception:
-                errs.append("video")
-            finally:
-                try:
-                    os.remove(tmp)
-                except OSError:
-                    pass
-    else:
-        errs.append("no_media")
-
-    status = "ok" if files else "fail"
-    append_jsonl(f"{WORK}/metadata.jsonl", {**d, "images_saved": files, "status": status, "errors": errs})
-    append_line(
-        f"{WORK}/capture_progress.txt",
-        f"{rank} {status} {kind or 'unknown'} files={len(files)}"
-        + ((" " + ",".join(errs)) if errs else ""),
-    )
-    return {"rank": rank, "status": status, "files": files, "errors": errs}
-
-# HTTP：/meta?rank=&d=<base64-json>  → 登记 meta
-#       /media?rank=&u=<media_url>   → 追加媒体 URL
-#       /finish?rank=                → 下载 / 抽帧 / 写进度
-# 仅绑 127.0.0.1；不要对公网暴露。
+```bash
+pip install pillow
+# 确认 ffmpeg 在 PATH
+CAPTURE_PROJECT=/path/to/<PROJECT> python assets/scripts/capture_server.py
 ```
 
-浏览器侧（示意）：在公开分享页打开控制台，从 DOM / `performance` / 网络里找出图片 CDN 或 `video`/`source` URL，再：
+`CAPTURE_PROJECT` 默认 = `cwd/capture_out`。仅绑回环，勿对公网暴露。
 
-```javascript
-// 示意：把捞到的 URL 交给本机服务（端口自定）
-fetch('http://127.0.0.1:8765/meta?rank=3&d=' + btoa(unescape(encodeURIComponent(JSON.stringify(meta)))));
-mediaUrls.forEach(u => fetch('http://127.0.0.1:8765/media?rank=3&u=' + encodeURIComponent(u)));
-fetch('http://127.0.0.1:8765/finish?rank=3');
-```
+### 浏览器侧（每条公开页）
 
-依赖：`ffmpeg`（口播抽帧）、可选 `Pillow`（统一存 PNG）。**不要**把 cookie、账号、API key 写进仓库或页面。
+1. 打开公开分享页（无头优先；遇墙停）。
+2. 改 `page_hook.example.js` 里的 `RANK` / `KIND`（图文=`image`，口播=`video`+可选 poster）后运行，或由 Antigravity `/browser` 等价执行。
+3. 钩子会：`/meta` → 多条 `/media` → `/finish`。
+4. 看 `shots/NN_*.png` 与 `work/capture_progress.txt`。
+
+meta 用 urlsafe-base64 JSON（与现网一致）；下载头：`User-Agent` + `Referer: https://www.douyin.com/`（缺 Referer 易 403）。
+
+依赖：`ffmpeg`（口播）、可选 `Pillow`。**不要**把 cookie、账号、API key 写进仓库或页面。
 
 ## 已知失败模式 → 怎么处理
 
@@ -217,7 +143,7 @@ fetch('http://127.0.0.1:8765/finish?rank=3');
 ```text
 有现成 shots/ + engagement？
   ├─ 是 → 只套模板出页
-  └─ 否 → 有浏览器 / Computer Use / 本机脚本？
-        ├─ 是 → 按本文链路抓；写 progress；失败标缺口
+  └─ 否 → 有浏览器 / Antigravity / Computer Use + 能跑 scripts/？
+        ├─ 是 → 启 capture_server + page_hook 捞 URL；写 progress；失败标缺口
         └─ 否 → 不要编截图；页面一律「暂未抓取到」，并注明需补抓
 ```
