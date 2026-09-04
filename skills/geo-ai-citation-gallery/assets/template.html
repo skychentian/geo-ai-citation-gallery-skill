@@ -15,7 +15,7 @@ const STATS = {...}` 与 `const data = [...]` 作为灌数入口；
   - 本模板为通用演示结构：请替换 {{SECTOR}} / 样本说明，勿绑定真实客户品牌叙事。
   - 监测品牌筛选仅作旁注，禁止全文品牌导向。
 -->
-<html lang="zh-CN"><!-- rev: client-pro-terms-2026-09-04 -->
+<html lang="zh-CN"><!-- rev: caption-transcript-2026-09-04 -->
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -792,7 +792,21 @@ function render(){
         </div>
         <div class="meta-sub">不重复问题约 ${qn} 道${dur}${ic}</div>
       </div>
-      ${r.original_desc ? `<div class="desc-block"><div class="field-label">文案</div><div class="desc is-clamped">${esc(r.original_desc)}</div><button type="button" class="desc-toggle" data-expand="1">展开全文</button></div>` : ''}
+      ${(() => {
+        const caption = r.original_desc || r.caption || '';
+        const blocks = [];
+        if (caption) {
+          blocks.push(`<div class="desc-block"><div class="field-label">发布文案</div><div class="desc is-clamped">${esc(caption)}</div><button type="button" class="desc-toggle" data-expand="1">展开全文</button></div>`);
+        }
+        const isOral = (r.content_type || '') === '口播';
+        const tr = (typeof r.transcript === 'string') ? r.transcript.trim() : '';
+        if (tr) {
+          blocks.push(`<div class="desc-block"><div class="field-label">口播文案</div><div class="desc is-clamped">${esc(tr)}</div><button type="button" class="desc-toggle" data-expand="1">展开全文</button></div>`);
+        } else if (isOral) {
+          blocks.push(`<div class="desc-block"><div class="field-label">口播文案</div><div class="desc">暂未抓取到</div></div>`);
+        }
+        return blocks.join('');
+      })()}
       ${(topics||tags) ? `<div class="tags"><span class="field-label">标签</span>${tags||''}${topics||''}</div>` : ''}
       <div class="media-label">画面</div>
       ${media}

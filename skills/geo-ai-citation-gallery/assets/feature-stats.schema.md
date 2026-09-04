@@ -34,7 +34,7 @@
 - `categories[]`: `{name, count, cite_sum, avg_cite, example, why_typical, script_pattern, content_type_split}`
 - `content_type_stats[]` / `content_type_by_category[]` / `content_type_conclusion` / `category_note`
 - `script_patterns[]`: 拍摄/脚本规律（白话）
-- `title_freq` / `htag_freq` / `topic_freq` / `title_len` / `title_examples` / `body_examples` / `tag_examples`
+- `title_freq` / `htag_freq` / `topic_freq` / `title_len` / `title_examples` / `body_examples` / `tag_examples`（分析「标题·正文·标签」时：`body_examples` 应区分发布文案规律 vs 口播说辞；口播缺 transcript 注明缺口）
 - `scatter[]` / `scatter_excluded[]` / `proof_points[]`
 - `follower_vs_cite` / `digg_vs_cite` / `collect_vs_cite`：分桶条均引用
 - `duration_points` / `duration_buckets`：口播秒
@@ -46,10 +46,11 @@
 |------|------|
 | rank | 排序（应用次数） |
 | video_id | 弱化展示 |
-| title / title_short | 大标题；≠ 文案 |
+| title / title_short | **短标题**（列表/卡片）；≠ 发布文案、≠ 口播文案 |
 | cite_count / app_rate | 应用次数 / 应用率 |
 | url | 原链 |
-| original_desc | 文案（三行预览可展开） |
+| original_desc / caption | **发布文案**：作者写在作品下的文字（三行预览可展开） |
+| transcript | **口播文案**：口播里说出来的话（字幕/口播稿/ASR）；与发布文案常不同；图文通常不填；缺则 null/「暂未抓取到」，禁止用发布文案冒充 |
 | hashtags / topics | 标签 |
 | account_name / follower_count | 账号 / 粉丝 |
 | digg_count / collect_count / share_count / comment_count | 赞藏转评；`null`→暂未抓取到；`0`→0 |
