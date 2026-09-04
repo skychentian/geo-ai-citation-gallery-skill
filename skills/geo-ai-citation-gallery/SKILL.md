@@ -1,5 +1,5 @@
 ---
-name: GEO AI 高引用视频画廊
+name: geo-ai-citation-gallery
 description: 当需要分析被 AI 搜索/大模型高频引用的短视频样本，并生成晨光陶瓷风格客户证据画廊（含指标说明、图表与拍摄指引）时使用。
 ---
 

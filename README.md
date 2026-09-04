@@ -10,6 +10,8 @@
 npx skills add skychentian/geo-ai-citation-gallery-skill --skill geo-ai-citation-gallery
 ```
 
+已实测：`npx skills` 可用，按 frontmatter `name`（`geo-ai-citation-gallery`）匹配；安装后目录一般为 `.agents/skills/geo-ai-citation-gallery/`。展示标题见 SKILL 正文「GEO AI 高引用视频画廊」。
+
 若 `npx skills` 不可用，可直接 clone 本仓库，把 `skills/geo-ai-citation-gallery/` 拷进项目的 skills 目录，或在对话里 `@` 引用 `SKILL.md`。
 
 ## 包内路径
