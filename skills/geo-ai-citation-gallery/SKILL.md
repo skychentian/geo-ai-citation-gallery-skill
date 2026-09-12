@@ -17,6 +17,7 @@ description: >-
 3. 抓画面：浏览器只捞媒体 URL；本机脚本下载/抽帧；禁止整页截屏当成品；缺数据标「暂未抓取到」。
 4. 文字三字段：短标题 ≠ 发布文案 ≠ 口播文案；禁止用发布文案冒充口播。
 5. 禁止编造帧图/互动数；失败不要写成 `0`。
+6. 交付前过 `references/qa-checklist.md`：**任一 P0 不通过 = 验收不通过**。
 
 ## 启动句
 
@@ -32,9 +33,9 @@ description: >-
 | 2 | 补元数据（发布文案、口播、短标题、标签≤5、账号等） | `references/hashtags.md` |
 | 3 | 抓画面：启本机服务 + 浏览器捞 CDN URL | **必读** `references/capture-pipeline.md`；跑 `scripts/capture_server.py` + `scripts/page_hook.example.js` |
 | 4 | 抓互动（赞/藏/转/粉/时长或页数） | 同上；空值用「暂未抓取到」 |
-| 5 | 分析（约 4 类互斥、图文vs口播、特征与脚本规律） | 出页前扫 `references/qa-checklist.md` |
+| 5 | 分析（约 4 类互斥、图文vs口播、特征与脚本规律） | — |
 | 6 | 套 `assets/template.html` → `index.html` + `images/` | Hero/指标文案用「引用*」；标签只渲染 ≤5 |
-| 7 | 按 QA 清单自检 | `references/qa-checklist.md` |
+| 7 | **验收门禁**（P0 全过才能交付） | **必读** `references/qa-checklist.md` |
 | 8 | 发布（可选，保留 slug）；客户页用晨光陶瓷，勿套学习「纸感」 | here.now 等 |
 
 ### 抓画面最短命令（详情在 capture-pipeline）
