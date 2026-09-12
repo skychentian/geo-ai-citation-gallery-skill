@@ -5,7 +5,7 @@
   如何替换数据：
   1. 用本页内嵌的 `/* DEMO：以下 STATS / data 为结构示例，交付时整段替换为客户赛道数据；勿保留真实客户品牌叙事为默认文案 */
 const STATS = {...}` 与 `const data = [...]` 作为灌数入口；
-     也可改为 fetch('./data.json') 后赋值（字段见同目录 feature-stats.schema.md）。
+     也可改为 fetch('./data.json') 后赋值（字段见../references/feature-stats.schema.md）。
   2. STATS：汇总指标、分类、词频、图表序列；data：详情卡逐条样本。
   3. 画面路径默认相对 ./images/；发布时与 index.html 同目录打包。
   如何发布（here.now 示例，保留 slug）：

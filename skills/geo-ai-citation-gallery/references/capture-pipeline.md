@@ -1,7 +1,7 @@
 # 抓画面执行手册（推荐其他 AI 打开）
 
 > **给 Activity / ChatGPT / Antigravity / 其它执行 AI 的操作手册。** 按本文件 + `scripts/` 即可独立完成抓画面，不必猜协议。 可运行脚本在 [`scripts/`](scripts/)：`capture_server.py`、`page_hook.example.js`、`download_one.py`。  
-> 主流程摘要仍见 [`SKILL.md`](../SKILL.md) 第 2 节第 3 步「抓画面（脚本 + 浏览器，已验证）」。
+> 主流程摘要见 [`SKILL.md`](../SKILL.md)；标签细则见 [`hashtags.md`](hashtags.md)。
 
 目标：在**尽量免账号登录**的前提下，拿到详情卡用的画面帧与可选互动元数据。**成品图来自脚本下载，不是浏览器截屏。** 成功率不保证；失败标缺口，禁止编造。
 
@@ -90,7 +90,7 @@
 
 ## 可运行脚本（不要再抄伪代码）
 
-路径均相对 skill 包根下的 `assets/`：
+路径均相对 **skill 根**（本文件所在目录的上一级）：
 
 | 文件 | 作用 |
 |------|------|
@@ -103,7 +103,7 @@
 ```bash
 pip install pillow
 # 确认 ffmpeg 在 PATH
-CAPTURE_PROJECT=/path/to/<PROJECT> python assets/scripts/capture_server.py
+CAPTURE_PROJECT=/path/to/<PROJECT> python scripts/capture_server.py
 ```
 
 `CAPTURE_PROJECT` 默认 = `cwd/capture_out`。仅绑回环，勿对公网暴露。
@@ -135,7 +135,7 @@ meta 用 urlsafe-base64 JSON（与现网一致）；下载头：`User-Agent` + `
 2. 在 `data` / `STATS` 里为每条样本填：
    - `images`: `["images/01_1.png", ...]`；无则空数组 + 文案「暂未抓取到」
    - 互动字段：有则填数字；无则 `null` / 缺省，UI 显示「暂未抓取到」（不是 `0`，除非页面确认是 0）
-3. 套 [`template.html`](template.html)，过 SKILL 校验清单后发布。
+3. 套 [`../assets/template.html`](../assets/template.html)，过 [`qa-checklist.md`](qa-checklist.md) 后发布。
 
 字段细节见 [`feature-stats.schema.md`](feature-stats.schema.md)。
 
@@ -155,24 +155,10 @@ meta 用 urlsafe-base64 JSON（与现网一致）；下载头：`User-Agent` + `
 抖音单条最多 **5** 个话题标签。抓 meta 时 `hashtags` 截断到 5；超额保留可选 `hashtags_raw`，并设 `hashtags_truncated: true`。
 
 
-## 标签截断示例（Python）
+## 标签截断
 
-```python
-def normalize_hashtags(tags, limit=5):
-    """抖音上限 5；去重、补 #、截断。"""
-    out, seen = [], set()
-    for t in tags or []:
-        t = (t or "").strip()
-        if not t:
-            continue
-        if not t.startswith("#"):
-            t = "#" + t.lstrip("#")
-        key = t.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(t)
-        if len(out) >= limit:
-            break
-    return out
+细则见 [`hashtags.md`](hashtags.md)。可执行：
+
+```bash
+python scripts/normalize_hashtags.py path/to/meta.json -i
 ```
