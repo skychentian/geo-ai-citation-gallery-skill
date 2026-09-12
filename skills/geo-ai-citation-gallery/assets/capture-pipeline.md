@@ -1,6 +1,6 @@
 # 抓画面执行手册（推荐其他 AI 打开）
 
-> **给 Antigravity / 其它执行 AI 的操作手册。** 可运行脚本在 [`scripts/`](scripts/)：`capture_server.py`、`page_hook.example.js`、`download_one.py`。  
+> **给 Activity / ChatGPT / Antigravity / 其它执行 AI 的操作手册。** 按本文件 + `scripts/` 即可独立完成抓画面，不必猜协议。 可运行脚本在 [`scripts/`](scripts/)：`capture_server.py`、`page_hook.example.js`、`download_one.py`。  
 > 主流程摘要仍见 [`SKILL.md`](../SKILL.md) 第 2 节第 3 步「抓画面（脚本 + 浏览器，已验证）」。
 
 目标：在**尽量免账号登录**的前提下，拿到详情卡用的画面帧与可选互动元数据。**成品图来自脚本下载，不是浏览器截屏。** 成功率不保证；失败标缺口，禁止编造。
@@ -9,7 +9,8 @@
 
 | 步骤 | 产物 | 谁做 | 登录抖音？ |
 |------|------|------|------------|
-| A. 引用清单 | TopN URL、应用次数 / 应用率 | 读 GEO 诊断包（xlsx/csv） | **否** |
+| A. 引用清单 | TopN URL、引用次数 / 引用率 | 读 GEO 诊断包（xlsx/csv） | **否** |
+| A2. 标签 | `hashtags` ≤ **5**（抖音上限）；超额截断 | 公开页或已有字段 | 否 |
 | B. 画面 + 部分 meta | `shots/`、metadata JSONL、`capture_progress` | **A** `scripts/capture_server.py` + **B** 浏览器捞 URL（见 SKILL 步骤 3） | 多数公开分享页可未登录；遇墙则停 |
 | C. 互动补全 | `engagement.json`（赞/藏/转/粉/时长等） | 同 B，或人工补 | 同上；空 / 假 0 需重试或排除出图 |
 | D. 出页 | 套 `template.html` → `index.html` | 任意能读 skill 的 AI | 不需要 |
@@ -146,4 +147,32 @@ meta 用 urlsafe-base64 JSON（与现网一致）；下载头：`User-Agent` + `
   └─ 否 → 有浏览器 / Antigravity / Computer Use + 能跑 scripts/？
         ├─ 是 → 启 capture_server + page_hook 捞 URL；写 progress；失败标缺口
         └─ 否 → 不要编截图；页面一律「暂未抓取到」，并注明需补抓
+```
+
+
+## 标签（与 SKILL 一致）
+
+抖音单条最多 **5** 个话题标签。抓 meta 时 `hashtags` 截断到 5；超额保留可选 `hashtags_raw`，并设 `hashtags_truncated: true`。
+
+
+## 标签截断示例（Python）
+
+```python
+def normalize_hashtags(tags, limit=5):
+    """抖音上限 5；去重、补 #、截断。"""
+    out, seen = [], set()
+    for t in tags or []:
+        t = (t or "").strip()
+        if not t:
+            continue
+        if not t.startswith("#"):
+            t = "#" + t.lstrip("#")
+        key = t.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(t)
+        if len(out) >= limit:
+            break
+    return out
 ```

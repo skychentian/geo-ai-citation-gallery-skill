@@ -12,12 +12,12 @@
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | sample_n | number | 样本条数 |
-| cite_sum | number | 应用次数合计 |
-| avg_cite / median_cite / max_cite | number | 条均 / 中位 / 最高应用次数 |
-| max_app_rate | number | 最高应用率（与展示单位一致，通常为百分比数值） |
+| cite_sum | number | 引用次数合计 |
+| avg_cite / median_cite / max_cite | number | 条均 / 中位 / 最高引用次数 |
+| max_app_rate | number | 最高引用率（与展示单位一致，通常为百分比数值） |
 | unique_questions | number | 不重复问题数 |
 | platform | string | 监测平台，如豆包手机版 |
-| total_answers | number | 总回答数（应用率分母） |
+| total_answers | number | 总回答数（引用率分母） |
 | monitor_date | string | 监测日 |
 | sector | string | 赛道 / 样本说明 |
 | oral_n / tuwen_n | number | 口播 / 图文条数 |
@@ -44,14 +44,14 @@
 
 | 字段 | 说明 |
 |------|------|
-| rank | 排序（应用次数） |
+| rank | 排序（引用次数） |
 | video_id | 弱化展示 |
 | title / title_short | **短标题**（列表/卡片）；≠ 发布文案、≠ 口播文案 |
-| cite_count / app_rate | 应用次数 / 应用率 |
+| cite_count / app_rate | 引用次数 / 引用率 |
 | url | 原链 |
 | original_desc / caption | **发布文案**：作者写在作品下的文字（三行预览可展开） |
 | transcript | **口播文案**：口播里说出来的话（字幕/口播稿/ASR）；与发布文案常不同；图文通常不填；缺则 null/「暂未抓取到」，禁止用发布文案冒充 |
-| hashtags / topics | 标签 |
+| hashtags / topics | 标签；**抖音 hashtags 最多 5 个**，超额截断后入库 |
 | account_name / follower_count | 账号 / 粉丝 |
 | digg_count / collect_count / share_count / comment_count | 赞藏转评；`null`→暂未抓取到；`0`→0 |
 | digg_valid 等 | 清洗后用于作图的有效值 |

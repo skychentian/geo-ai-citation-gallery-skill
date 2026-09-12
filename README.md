@@ -21,3 +21,9 @@ AI 会按 skill 里的端到端步骤自己跑完。**不用读 capture 文档�
 ## 抓画面
 
 抓图详情见 skill 步骤 3「抓画面（脚本 + 浏览器，已验证）」+ `skills/geo-ai-citation-gallery/assets/scripts/`（`capture_server.py` / `page_hook.example.js`）。成品图来自脚本下载，不是浏览器截屏。
+
+
+## 用词与标签
+
+- 指标展示用「引用次数 / 引用率」，不要写「应用次数 / 应用率」。
+- 抖音话题标签每条最多 **5** 个；入库与页面展示都截断到 5。
