@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<!--
+  DEPRECATED FOR CUSTOMER DELIVERY
+  --------------------------------
+  本文件为官方「绿头 KPI 偏好分析」壳，仅作内部/归档参考。
+  客户主交付请用 ../../assets/template.html（晨光陶瓷五 Tab 画廊）。
+  不要把本页当作对客主页面。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{BRAND}} · AI 视频抓取偏好分析</title>
+<!--
+  GEO 高引用视频「偏好分析」客户页模板（兔宝宝同款结构）
+  ============================================================
+  硬规则：
+  1. 复制本文件为交付 index.html，只替换 {{占位符}} 与示例数据，禁止另起 CSS 壳。
+  2. 主色用下方 CSS 变量；默认绿系，可按品牌改 --brand / --brand-2。
+  3. 有量化分布时保留 ECharts；样本 <10 且无分布图时可删对应 .chart + script 块，勿删 KPI/卡片骨架。
+  4. 数字必须可追溯；播放量缺失写「未获取」，禁止编造。
+  5. 本模板 ≠ 晨光陶瓷「画廊」模板；画廊请用 geo-ai-citation-gallery。
+  占位：
+    {{BRAND}} {{PERIOD}} {{SCOPE}} {{KPI_*}} {{ONE_LINER}} … 见 SKILL.md
+-->
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+  :root{
+    --brand:#2d5a3d;
+    --brand-2:#4a8c5f;
+    --brand-soft:#e8f0ea;
+    --brand-tint:#f0f7f2;
+    --bg:#f5f6f8;
+    --card:#fff;
+    --ink:#1a1b1c;
+    --muted:#888;
+    --line:#eee;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.7}
+  .container{max-width:860px;margin:0 auto;padding:32px 24px 60px}
+  .header{background:linear-gradient(135deg,var(--brand) 0%,var(--brand-2) 100%);color:#fff;border-radius:12px;padding:36px 32px;margin-bottom:28px}
+  .header h1{font-size:24px;font-weight:700;margin-bottom:8px}
+  .header .meta{font-size:13px;opacity:.85}
+  .header .meta span{margin-right:20px;display:inline-block}
+  .card{background:var(--card);border-radius:10px;padding:28px;margin-bottom:20px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+  .card h2{font-size:18px;font-weight:700;color:var(--brand);margin-bottom:16px;padding-bottom:10px;border-bottom:2px solid var(--brand-soft)}
+  .card h3{font-size:15px;font-weight:600;color:#333;margin:18px 0 10px}
+  .card p{font-size:14px;color:#444;margin-bottom:10px}
+  .highlight{background:var(--brand-tint);border-left:4px solid var(--brand-2);padding:14px 18px;border-radius:0 6px 6px 0;margin:14px 0;font-size:14px}
+  .highlight strong{color:var(--brand)}
+  .kpi-row{display:flex;gap:16px;margin:16px 0;flex-wrap:wrap}
+  .kpi{flex:1;min-width:140px;background:#f8faf9;border-radius:8px;padding:16px;text-align:center}
+  .kpi .num{font-size:28px;font-weight:700;color:var(--brand)}
+  .kpi .label{font-size:12px;color:var(--muted);margin-top:4px}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+  th{background:var(--brand-tint);color:var(--brand);font-weight:600;padding:10px 12px;text-align:left}
+  td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:hover td{background:#fafbfb}
+  tr.dim td{color:#8b8377;background:#fcfbf9}
+  .chart{width:100%;height:340px;margin:12px 0}
+  .tag{display:inline-block;background:var(--brand-soft);color:var(--brand);padding:2px 10px;border-radius:12px;font-size:12px;margin:2px 4px 2px 0}
+  .tag-warn{background:#fef3e2;color:#b8732a}
+  .badge{display:inline-block;font-size:12px;padding:2px 9px;border-radius:999px;white-space:nowrap}
+  .badge.ok{background:#e6f3ec;color:#2e7d5b;border:1px solid #bfe0ce}
+  .badge.no{background:#f2efea;color:#9a8f83;border:1px solid #e0d9cf}
+  .note{font-size:12.5px;color:var(--muted);margin-top:3px}
+  .footer{text-align:center;font-size:12px;color:#aaa;margin-top:32px;padding-top:20px;border-top:1px solid var(--line)}
+  ul,ol{padding-left:20px;margin:8px 0}
+  li{font-size:14px;color:#444;margin-bottom:6px}
+  code{background:#f1ece2;padding:1px 5px;border-radius:4px;font-size:12.5px}
+  @media(max-width:640px){
+    .container{padding:20px 14px 48px}
+    .header{padding:24px 18px}
+    .header h1{font-size:20px}
+    .card{padding:20px 16px}
+    .kpi .num{font-size:22px}
+    .chart{height:280px}
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <h1>{{BRAND}} · AI 视频抓取偏好分析</h1>
+    <div class="meta">
+      <span>数据周期：{{PERIOD}}</span>
+      <span>分析范围：{{SCOPE}}</span>
+      <span>监测品牌：{{BRAND}}</span>
+    </div>
+  </div>
+
+  <!-- 0. 一句话结论 + KPI -->
+  <div class="card">
+    <h2>一句话结论</h2>
+    <div class="highlight">
+      <strong>{{ONE_LINER}}</strong>
+    </div>
+    <div class="kpi-row">
+      <div class="kpi"><div class="num">{{KPI_1_NUM}}</div><div class="label">{{KPI_1_LABEL}}</div></div>
+      <div class="kpi"><div class="num">{{KPI_2_NUM}}</div><div class="label">{{KPI_2_LABEL}}</div></div>
+      <div class="kpi"><div class="num">{{KPI_3_NUM}}</div><div class="label">{{KPI_3_LABEL}}</div></div>
+      <div class="kpi"><div class="num">{{KPI_4_NUM}}</div><div class="label">{{KPI_4_LABEL}}</div></div>
+    </div>
+    <p class="note">口径声明：结论描述「本包已被引用样本中反复出现的特征」，不是平台官方算法，也不承诺套用模板必获引用。播放量缺失一律写「未获取」。</p>
+  </div>
+
+  <!-- 1. 样本清单 -->
+  <div class="card">
+    <h2>1. 样本清单</h2>
+    <p>{{SAMPLE_INTRO}}</p>
+    <table>
+      <thead>
+        <tr>
+          <th>排名</th><th>视频标题</th><th>账号</th><th>发布时间</th><th>时长</th><th>引用</th><th>状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- 示例行：纳入 -->
+        <tr>
+          <td>02</td>
+          <td>{{SAMPLE_TITLE}}</td>
+          <td>{{SAMPLE_ACCOUNT}}</td>
+          <td>{{SAMPLE_DATE}}</td>
+          <td>{{SAMPLE_DURATION}}</td>
+          <td><strong>{{SAMPLE_CITES}}</strong></td>
+          <td><span class="badge ok">纳入分析</span></td>
+        </tr>
+        <!-- 示例行：排除 -->
+        <tr class="dim">
+          <td>01</td>
+          <td>{{EXCLUDED_TITLE}}</td>
+          <td>—</td>
+          <td>—</td>
+          <td>—</td>
+          <td><strong>{{EXCLUDED_CITES}}</strong></td>
+          <td><span class="badge no">已排除</span><div class="note">{{EXCLUDED_REASON}}</div></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 2. 谁在引用 / 平台分布（有数据才保留 chart） -->
+  <div class="card">
+    <h2>2. 谁在引用视频？</h2>
+    <p>{{PLATFORM_INTRO}}</p>
+    <div id="chart-platform" class="chart"></div>
+    <div class="highlight"><strong>解读：</strong>{{PLATFORM_TAKEAWAY}}</div>
+  </div>
+
+  <!-- 3. 标题与标签 -->
+  <div class="card">
+    <h2>3. 标题与话题标签特征</h2>
+    <p>{{TITLE_INTRO}}</p>
+    <table>
+      <thead><tr><th>类型</th><th>典型公式</th><th>条数</th><th>代表视频</th></tr></thead>
+      <tbody>
+        <tr><td>{{TITLE_TYPE}}</td><td><code>{{TITLE_FORMULA}}</code></td><td>{{TITLE_N}}</td><td>{{TITLE_EXAMPLE}}</td></tr>
+      </tbody>
+    </table>
+    <div class="highlight"><strong>标题侧结论：</strong>{{TITLE_TAKEAWAY}}</div>
+  </div>
+
+  <!-- 4. 口播/结构 -->
+  <div class="card">
+    <h2>4. 口播 / 视频结构类型</h2>
+    <table>
+      <thead><tr><th>结构类型</th><th>骨架</th><th>条数</th><th>为何易被引</th></tr></thead>
+      <tbody>
+        <tr><td>{{STRUCT_TYPE}}</td><td>{{STRUCT_SKELETON}}</td><td>{{STRUCT_N}}</td><td>{{STRUCT_WHY}}</td></tr>
+      </tbody>
+    </table>
+    <div class="highlight"><strong>结构侧结论：</strong>{{STRUCT_TAKEAWAY}}</div>
+  </div>
+
+  <!-- 5. 文案风格与信息密度 -->
+  <div class="card">
+    <h2>5. 文案风格与信息密度</h2>
+    <ul>
+      <li><strong>口播语气：</strong>{{STYLE_TONE}}</li>
+      <li><strong>信息密度：</strong>{{STYLE_DENSITY}}</li>
+      <li><strong>转化引导：</strong>{{STYLE_CTA}}</li>
+      <li><strong>信任锚点：</strong>{{STYLE_TRUST}}</li>
+    </ul>
+  </div>
+
+  <!-- 6. 内容类型分布 -->
+  <div class="card">
+    <h2>6. 内容类型分布</h2>
+    <table>
+      <thead><tr><th>类型</th><th>条数</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>{{CTYPE}}</td><td>{{CTYPE_N}}</td><td>{{CTYPE_NOTE}}</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 7. 可复制写法 -->
+  <div class="card">
+    <h2>7. 给品牌的可复制视频写法</h2>
+    <ol>
+      <li><strong>{{PLAY_1_TITLE}}</strong> {{PLAY_1_BODY}}</li>
+      <li><strong>{{PLAY_2_TITLE}}</strong> {{PLAY_2_BODY}}</li>
+      <li><strong>{{PLAY_3_TITLE}}</strong> {{PLAY_3_BODY}}</li>
+    </ol>
+    <div class="highlight">
+      <strong>共性标签：</strong>
+      <span class="tag">{{TAG_1}}</span>
+      <span class="tag">{{TAG_2}}</span>
+      <span class="tag">{{TAG_3}}</span>
+    </div>
+  </div>
+
+  <!-- 8. 缺口与风险 -->
+  <div class="card">
+    <h2>8. 缺口与风险</h2>
+    <ul>
+      <li>{{RISK_1}}</li>
+      <li>{{RISK_2}}</li>
+      <li>{{RISK_3}}</li>
+    </ul>
+  </div>
+
+  <div class="footer">
+    数据来源：{{FOOTER_SOURCE}}<br>
+    生成说明：基于本技能 <code>assets/template.html</code> 套用；禁止另起视觉壳。
+  </div>
+
+</div>
+
+<script>
+/* 有平台分布数据时填充；无数据则删除本 script 与 #chart-platform */
+(function(){
+  var el = document.getElementById('chart-platform');
+  if (!el || typeof echarts === 'undefined') return;
+  var chart = echarts.init(el);
+  chart.setOption({
+    backgroundColor: 'transparent',
+    title: { text: '各 AI 平台视频信源占比（示例，请替换）', left: 'center', textStyle: { fontSize: 14, fontWeight: 600 } },
+    tooltip: { trigger: 'axis', confine: true },
+    grid: { left: 100, right: 40, top: 50, bottom: 24, containLabel: true },
+    xAxis: { type: 'value', name: '视频占比(%)', axisLabel: { fontSize: 11 } },
+    yAxis: { type: 'category', data: ['平台C','平台B','平台A'], axisLabel: { fontSize: 11 } },
+    series: [{
+      type: 'bar',
+      data: [
+        { value: 0.4, itemStyle: { color: '#a8d5b5' } },
+        { value: 11.8, itemStyle: { color: '#6bb380' } },
+        { value: 72.2, itemStyle: { color: 'var(--brand)' } }
+      ],
+      itemStyle: { color: '#4a8c5f' },
+      label: { show: true, position: 'right', formatter: '{c}%', fontSize: 11 }
+    }]
+  });
+  window.addEventListener('resize', function(){ chart.resize(); });
+})();
+</script>
+</body>
+</html>

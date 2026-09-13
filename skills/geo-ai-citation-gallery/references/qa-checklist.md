@@ -57,6 +57,13 @@ rg -n '应用次数|应用率|次应用' gallery/index.html && echo FAIL || echo
 
 ---
 
+| B8 | 文案留档齐全 | 每个 Top 序号有 `文案/*.md`（含【未拉取到】占位）；`top.json` 的 `script_path` / `fetch_status` / `analysis_eligible` 与文件一致 | 对 top.json 与文案目录对一下 |
+| B9 | 可分析口径 | 画廊特征/分类/案例只引用 `analysis_eligible=true`；排除数在 README 或特征 Tab 交代 | 对照 top.json 抽查案例 rank |
+| B10 | 偏好归档（若有） | 若存在 `偏好分析.md`：含标题/文案特征表与口播结构类型表；非空壳 | 打开 md 扫结构 |
+| B11 | 包收尾 | 无残留 `_过程/`（除非明确保留）；客户主交付为晨光陶瓷画廊而非绿头 KPI 壳 | 目录扫描 + 打开 index |
+
+---
+
 ## P2 — 体验建议（不挡验收）
 
 | ID | 项 | 说明 |
@@ -74,7 +81,7 @@ rg -n '应用次数|应用率|次应用' gallery/index.html && echo FAIL || echo
 样本 N / 总回答数：
 页面 URL 或路径：
 P0：A1__ A2__ A3__ A4__ A5__ A6__ A7__ A8__ A9__ A10__  （Pass/Fail）
-P1 缺口：
+P1 缺口（含文案留档 B8–B11）：
 结论：通过 / 不通过
 验收人/日期：
 ```
