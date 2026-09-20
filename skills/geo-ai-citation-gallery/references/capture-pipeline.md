@@ -97,6 +97,7 @@
 | [`scripts/capture_server.py`](scripts/capture_server.py) | 本机 `127.0.0.1:8765`：`/meta` `/media` `/finish`；Referer+UA 下载；图文 PNG；口播 ffmpeg 抽帧；写 `shots/`、`work/capture_progress.txt`、`work/metadata.jsonl` |
 | [`scripts/page_hook.example.js`](scripts/page_hook.example.js) | 浏览器控制台/注入：从 `<img>`、背景、`video`、performance、常见 CDN 提示捞 URL，再 fetch 本机 |
 | [`scripts/download_one.py`](scripts/download_one.py) | 单条 URL 带 Referer 试下载（可选） |
+| [`scripts/fetch_engagement.py`](scripts/fetch_engagement.py) | **互动补全**：Playwright 公开页读 `data-e2e` 赞/藏/转/粉/时长 → `work/engagement.json` |
 
 ### 启动
 
@@ -119,6 +120,84 @@ meta 用 urlsafe-base64 JSON（与现网一致）；下载头：`User-Agent` + `
 
 依赖：`ffmpeg`（口播）、可选 `Pillow`。**不要**把 cookie、账号、API key 写进仓库或页面。
 
+
+## C. 互动补全（赞 / 藏 / 转 / 粉 / 时长）
+
+> 2026-09-19 康丽根 Top50 验证：digg **45/50**、collect **43/50**、share **41/50**、duration **47/50**；公开页 Playwright，**不登录、不编造数字**。
+
+### 何时跑
+
+画廊 `gallery/data.json` 已有 `rank` + `video_id`（封面可先空）后跑。封面补抓与互动可分开。
+
+### 命令
+
+```bash
+# 在 skill 根目录；--package 指向分析包根（含 gallery/data.json）
+pip install playwright && playwright install chromium   # 首次
+python scripts/fetch_engagement.py --package /path/to/<PROJECT>
+# 遇墙观察：加 --headed
+# 只重试 digg 仍为 null：加 --retry-failed
+```
+
+产物：
+
+- `work/engagement.json` / `engagement.jsonl` / `engagement_progress.txt`
+- 合并进 `gallery/data.json` 的 `likes` / `favorites` / `shares` / `followers` / `duration`（字段名以模板为准）后重出 `index.html`
+
+### URL 试探顺序（同一 video_id）
+
+1. `https://www.douyin.com/note/{id}`（图文/笔记优先）
+2. `https://www.douyin.com/video/{id}`
+3. `https://www.douyin.com/jingxuan?modal_id={id}`（modal）
+4. `https://www.iesdouyin.com/share/video/{id}`（分享页兜底）
+
+note/video 已拿到 digg+collect 且标题非「记录美好生活」→ 可提前停。遇登录墙 → **停该条**，UI 写「暂未抓取到」，禁止绕过。
+
+### DOM（`data-e2e`）
+
+在 `note-detail` / `feed-active-video` / `modal-video-container` 作用域内读：
+
+| 选择器 | 字段 |
+|--------|------|
+| `video-player-digg` | 赞 |
+| `video-player-collect` | 收藏 |
+| `video-player-share` | 分享 |
+| `feed-comment-icon` | 评论（可选） |
+| `user-info` / `feed-video-nickname` | 账号名、粉丝文案 |
+| `video` 元素 `duration` 或 `mm:ss / mm:ss` | 时长（秒） |
+
+解析：`12.3万` / `1.2千` → 整数；纯文案「赞」「收藏」「分享」**无数字** → 不是缺失，按**平台零互动展示**可记 `0`（见下）。
+
+### pick_best 规则（易踩坑）
+
+- 优先序：note > video > modal > share
+- **有 digg/collect 时不要因 `error-page` 标记整条丢弃**（常见误标，会把好数据扔掉）
+- 登录墙：整条 `login_wall`，字段保持 `null` → 页面「暂未抓取到」
+- 通用标题「记录美好生活」降权，避免 modal 串号
+
+### 数字口径（与 SKILL 一致，补一条）
+
+| 情况 | 写入 | 页面文案 |
+|------|------|----------|
+| DOM 读到数字（含真实 0） | 整数 | 数字 |
+| 仅图标文案「赞｜收藏｜分享」、旁无位数 | `0` + source 注明「平台零互动展示」 | `0` |
+| 登录墙 / 未打开详情 / 选择器全空 | `null` | **暂未抓取到**（禁止填假 0） |
+| 散点/相关分析 | 只计入有真实数字的点；脚注排除未抓到的 | — |
+
+### 合并回画廊
+
+把 `engagement.json` 按 `rank` / `video_id` merge 进 `data.json`，再套模板或刷新已有 `index.html`。缺字段保持「暂未抓取到」。合并后重发 here.now / 团队域名挂载。
+
+### 封面补抓（顺带）
+
+诊断包里的小图标（如 32×32）不能当封面。应用抖音 CDN 大图重下；交付前检查 **min(宽,高) ≥ 360**。缺封面 →「暂未抓取到」，禁止用占位假图充数。
+
+### 发布与团队域名挂载（可选）
+
+1. here.now：用既有 `publish.sh --slug <slug>` 更新同一 slug（如兔宝宝 `still-mill-xbe8`、康丽根 `lilac-riddle-e652`）。
+2. `news.skygeoapp.com`：`POST /api/v1/mounts`，`mount_path` + `slug` + `domain=news.skygeoapp.com`（例：`tubao-top50` → still-mill；`kangligeng-douyin-top50` → lilac-riddle）。挂载后核对 **200**；若短暂 404，再发一次 slug 或确认 mount 生效。
+
+
 ## 已知失败模式 → 怎么处理
 
 | 现象 | 处理 |
@@ -126,7 +205,7 @@ meta 用 urlsafe-base64 JSON（与现网一致）；下载头：`User-Agent` + `
 | CDN 403 | 换 URL / 补 Referer；仍失败则 partial + 缺口 |
 | 页面不暴露可下载视频地址 | `fail` + 原因；可试封面；或转人工 |
 | 只抓到部分帧 / 仅 poster | progress 注明；页面照常展示已有帧 |
-| 互动空或假全 0 | 重试；散点图排除并脚注「未计入」 |
+| 互动空或假全 0 | 跑 `fetch_engagement.py --retry-failed`；仍空保持「暂未抓取到」；散点排除并脚注 |
 | 登录墙 / 验证码 | **停**；标缺口或转人工，勿绕过 |
 
 ## 与 template 的衔接
@@ -145,8 +224,9 @@ meta 用 urlsafe-base64 JSON（与现网一致）；下载头：`User-Agent` + `
 有现成 shots/ + engagement？
   ├─ 是 → 只套模板出页
   └─ 否 → 有浏览器 / Antigravity / Computer Use + 能跑 scripts/？
-        ├─ 是 → 启 capture_server + page_hook 捞 URL；写 progress；失败标缺口
-        └─ 否 → 不要编截图；页面一律「暂未抓取到」，并注明需补抓
+        ├─ 是 → 启 capture_server + page_hook 捞画面；
+        │       再跑 fetch_engagement.py 补赞/藏；失败标缺口
+        └─ 否 → 不要编截图/互动数；页面一律「暂未抓取到」，并注明需补抓
 ```
 
 
