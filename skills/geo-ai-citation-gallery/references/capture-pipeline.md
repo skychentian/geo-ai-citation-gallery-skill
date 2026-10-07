@@ -29,6 +29,27 @@ python3 scripts/douyin_fetch.py --package <分析包> --out <包>/work/douyin_fe
 | `transcripts.jsonl` | `work/transcripts.jsonl`（字段同名，`transcriptReviewStatus=pending`） |
 | `field_status.json`、`coverage.json` | `capture-ledger.json`、`coverage.json` 的素材。字段不完全相同：缺 per-field 的 `value` / `source_url` / `observed_at` / `attempts`。系统 v3 回传前仍需转换 |
 
+### 合并进分析包
+
+抓取完成后用 `scripts/merge_fetch.py` 把产出合并进分析包，不要手改 `data.json`。
+
+```bash
+# 在技能根目录。先看差异，确认后再写入。
+python3 scripts/merge_fetch.py --package <分析包> --fetch <douyin_fetch 输出目录> --dry-run
+python3 scripts/merge_fetch.py --package <分析包> --fetch <douyin_fetch 输出目录>
+```
+
+- `--dry-run` 只把差异摘要打到标准输出，不写盘。确认后再去掉它真跑。
+- 默认只填空（`null`、空字符串、空列表、「暂未抓取到」、「暂未获取」），不覆盖已有人工值。两边都有值且不同记「冲突（未覆盖）」。字符串只差空白（换行、连续空格、首尾空格）视为相同，不记冲突，`--overwrite` 也不改。
+- `--overwrite`：脚本有可靠值时覆盖人工值，报告列出旧值 → 新值。`content_type` 只在人工为空时填，不覆盖。
+- `--overwrite-fields`：只覆盖列出的字段，其他字段仍只填空。例如 `--overwrite-fields original_desc`。未知字段名报错退出。与 `--overwrite` 同时给出时，以 `--overwrite`（全部可写字段）为准，并在报告里写明。
+- 写入前把 `gallery/data.json` 备份为同目录 `data.json.bak-merge-YYYYMMDDHHMMSS`。
+- 报告写到 `<分析包>/work/merge_fetch/merge-report-YYYYMMDDHHMMSS.md` 和同名 `.json`。
+- 新增 `post_title`（平台发布标题，附 `post_title_source`）和 `citation_title`（包内 `_机器可读/top.json` 里同 `video_id` 的 AI 引用标题）。`title` / `title_short` 原样保留。当前模板不读这两个新字段，页面不变；以后要显示再改模板。
+- 新增 `post_desc`：平台发布文案全文，取 `items.json` 的 `original_desc`，且 `field_status.desc` 为 ok 才写，默认只填空。`original_desc` 仍按填空 / 覆盖规则处理，不因写入 `post_desc` 而被改掉。模板和 `build_report` 的「发布文案全文」读 `original_desc`。若它与 `citation_title` 相同而 `post_desc` 不同，报告会列出「original_desc 实为诊断包引用标题」；要让页面显示平台真实文案，跑 `--overwrite-fields original_desc`。
+- 人工已有 `transcript` 但没有 `transcript_status` 时，补 `transcript_status=pending`。
+- 图片复制到 `shots/douyin_fetch/NN/` 留证据。只有 `data.images` 真被写入（空才填，或按覆盖规则替换）时，才同时复制进 `gallery/images/douyin_fetch/NN/`。可补图（未改）只进 shots，不进 images。已有同名文件不覆盖。`--dry-run` 不复制任何文件。视频（mp4 / m4a）默认不复制，仍留在 fetch 输出目录；要复制进 shots 再加 `--shots-video`。
+
 实测（某客户 Top50，2026-10-07）：全部 50 条成功、0 条被挡。全程约 34 分钟（2061 秒，平均约 41 秒/条），不转写约 25 秒/条（含 4–8 秒限速）；前 10 条 535 秒。赞 / 藏 / 转 / 评 / 粉 / 发布日期 50/50。图文 76 张原图。视频 30/30，含 mp4、抽帧、转写。
 
 已知缺口：拿不到播放量。转写是 faster-whisper small 自动转写，同音错字多，必须标「自动转写，待核对」并人工校对。图文 OCR（`image_text`）、`talking_head` / `montage` 细分没做。大批量要分批跑、保持限速，`/video/{id}` 路由易出滑块。
@@ -132,6 +153,10 @@ python3 scripts/douyin_fetch.py --package <分析包> --out <包>/work/douyin_fe
 | [`scripts/page_hook.example.js`](scripts/page_hook.example.js) | 浏览器控制台/注入：从 `<img>`、背景、`video`、performance、常见 CDN 提示捞 URL，再 fetch 本机 |
 | [`scripts/download_one.py`](scripts/download_one.py) | 单条 URL 带 Referer 试下载（可选） |
 | [`scripts/fetch_engagement.py`](scripts/fetch_engagement.py) | **互动补全**：Playwright 公开页读 `data-e2e` 赞/藏/转/粉/时长 → `work/engagement.json` |
+| [`scripts/douyin_fetch.py`](scripts/douyin_fetch.py) | 无头只读抓取公开页：画面、互动、时长、口播；产出 `items.json`、`field_status.json`、`media/` |
+| [`scripts/asr_worker.py`](scripts/asr_worker.py) | faster-whisper 批量转写，由 douyin_fetch 拉起或单独跑；默认离线加载模型 |
+| [`scripts/compare_manual.py`](scripts/compare_manual.py) | 只读对比脚本产出与分析包里的手动结果，写出 `compare.json`、`compare.md` |
+| [`scripts/merge_fetch.py`](scripts/merge_fetch.py) | 把 douyin_fetch 产出合并进 `gallery/data.json` 与 images / shots（默认只填空，`--dry-run` / `--overwrite` / `--overwrite-fields`，先备份再写报告） |
 
 ### 启动
 
@@ -258,7 +283,7 @@ note/video 已拿到 digg+collect 且标题非「记录美好生活」→ 可提
 
 ```text
 先跑 scripts/douyin_fetch.py（默认）
-  ├─ 全部 ok → 按上面「默认」一节的映射合并进 data.json / shots / engagement / transcripts，再套模板出页
+  ├─ 全部 ok → 用 scripts/merge_fetch.py 合并进 gallery/data.json 与 images / shots（先 --dry-run 再真跑），再套模板出页
   └─ 有 blocked / missing / 下载失败的条目 → 只对这些条目进入下面原有分支（兜底）
 
 有现成 shots/ + engagement？

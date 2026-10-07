@@ -41,7 +41,7 @@ HTML 以 2026-09-24 确认版为准，具体执行必读 `references/approved-re
 |----|--------|------------------------|
 | 1 | 确认范围 → 按视频身份归并 → 区分引用回答数与覆盖问题数 → TopN | 必读 `references/package-spec.md`、`references/extract-fetch-runbook.md`、`references/feature-stats.schema.md` |
 | 2 | 补元数据（发布文案、口播、短标题、完整原始标签、账号等） | `references/hashtags.md` |
-| 3 | 抓画面 + 互动 + 时长 + 口播：默认跑 `scripts/douyin_fetch.py`；失败条目兜底：启本机服务 + 浏览器捞 CDN URL | **必读** `references/capture-pipeline.md`（默认一节）；兜底跑 `scripts/capture_server.py` + `scripts/page_hook.example.js` |
+| 3 | 抓画面 + 互动 + 时长 + 口播：默认跑 `scripts/douyin_fetch.py`；失败条目兜底：启本机服务 + 浏览器捞 CDN URL。跑完用 `scripts/merge_fetch.py` 合并进 gallery/data.json（先 --dry-run） | **必读** `references/capture-pipeline.md`（默认一节）；兜底跑 `scripts/capture_server.py` + `scripts/page_hook.example.js` |
 | 4 | 抓互动（赞/藏/转/粉/时长）：默认已由第 3 步 douyin_fetch 产出 engagement.json；缺的条目兜底 | **必读** capture-pipeline §C；兜底跑 `scripts/fetch_engagement.py --package <包>`；空值「暂未抓取到」 |
 | 5 | 按证据维度分析，主类按需求划分，每项发现关联样本和引用问题 | 必读 `references/analysis-phase.md`、`references/stage-guidance.md` |
 | 6 | 按版式约定写 report.json，运行 `scripts/build_report.py --input <report.json> --out <新目录>` | 必读 `references/approved-report-contract.md`；模板禁止直接保留旧客户案例 |
@@ -54,6 +54,9 @@ HTML 以 2026-09-24 确认版为准，具体执行必读 `references/approved-re
 # 在 skill 根目录（含本 SKILL.md 的目录）
 # 默认：画面、互动、时长、口播一次出
 python3 scripts/douyin_fetch.py --package /path/to/<PROJECT> --out /path/to/<PROJECT>/work/douyin_fetch
+# 合并进 gallery/data.json（先 --dry-run）
+python3 scripts/merge_fetch.py --package /path/to/<PROJECT> --fetch /path/to/<PROJECT>/work/douyin_fetch --dry-run
+python3 scripts/merge_fetch.py --package /path/to/<PROJECT> --fetch /path/to/<PROJECT>/work/douyin_fetch
 
 # 兜底（失败条目）
 pip install pillow   # 口播还要 PATH 里有 ffmpeg
