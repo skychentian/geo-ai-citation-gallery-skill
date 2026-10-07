@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-收尾：校验统一交付包，删除 _过程/，确认根目录干净。
+打包检查：保留所有过程证据；通过不代表内容质量或交付验收完成。
 
 统一技能后：
   - 客户主交付 = gallery/index.html + gallery/images/（晨光陶瓷五 Tab）
@@ -17,7 +17,7 @@ import argparse
 import json
 import os
 import re
-import shutil
+from fetch_video_scripts import parse_meta
 
 REQUIRED_FILES = ("README.md", "视频索引.md")
 REQUIRED_DIRS = ("文案", "_机器可读")
@@ -32,6 +32,7 @@ BASE_ALLOWED = {
     "index.html",
     "shots",
     "work",
+    "_过程",
 }
 
 
@@ -54,7 +55,7 @@ def _find_gallery(pkg):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--package", required=True)
-    ap.add_argument("--keep-process", action="store_true")
+    ap.add_argument("--keep-process", action="store_true", help="兼容旧命令；默认始终保留过程目录")
     ap.add_argument("--allow-empty-scripts", action="store_true")
     ap.add_argument(
         "--require-preference",
@@ -135,29 +136,33 @@ def main():
                     errors.append(f"全平台模式缺少平台短文: 平台偏好/{p}.md")
     else:
         if os.path.isdir(plat_dir):
-            errors.append("仅抖音模式不应存在 平台偏好/（请删除或改用全平台模式）")
+            errors.append("仅抖音范围与现有 平台偏好/ 不一致，请核对范围（本脚本不会删除证据）")
 
     ok_paths = []
-    missing_any = []
-    missing_ok = []
     for v in videos:
         rel = v.get("script_path") or ""
         st = v.get("fetch_status") or "pending"
         full = os.path.join(pkg, rel) if rel else ""
-        if not (full and os.path.isfile(full) and os.path.getsize(full) > 40):
-            missing_any.append(rel or v.get("title") or "?")
-        if st == "ok":
-            if full and os.path.isfile(full) and os.path.getsize(full) > 200:
-                ok_paths.append(rel)
+        label = rel or v.get("title") or "?"
+        if st == "pending":
+            errors.append(f"文案仍待处理: {label}")
+        elif st == "ok":
+            if not full or not os.path.isfile(full):
+                errors.append(f"fetch_status=ok 但缺文件: {label}")
+                continue
+            with open(full, encoding="utf-8") as f:
+                script_meta, body = parse_meta(f.read())
+            if (not body or body.startswith("（待填入") or body.startswith("（未能获取")
+                    or not script_meta.get("拉取状态", "").startswith("已拉取")):
+                errors.append(f"fetch_status=ok 但正文/状态待核验: {label}")
             else:
-                missing_ok.append(rel or v.get("title") or "?")
-    if missing_any:
-        errors.append(
-            f"存在空号（Top 序号无对应 md，含失败占位）: {len(missing_any)} 条"
-            f"（例: {missing_any[0]}）。请重跑 fetch_video_scripts.py --verify"
-        )
-    if missing_ok:
-        errors.append(f"fetch_status=ok 但文案缺失/过短: {len(missing_ok)} 条（例: {missing_ok[0]}）")
+                ok_paths.append(rel)
+        elif st not in {"fail", "blocked", "dead", "bgm", "short"}:
+            errors.append(f"未识别的拉取状态 {st}: {label}")
+        elif st in {"fail", "blocked", "dead"} and not v.get("fail_reason"):
+            errors.append(f"失败记录缺少原因: {label}")
+        elif st == "short":
+            errors.append(f"旧版短文案状态需重新核验，不能按长度排除: {label}")
     if not args.allow_empty_scripts and not ok_paths and videos:
         warnings.append(f"没有一条 fetch_status=ok 的文案（共 {len(videos)} 条清单）")
 
@@ -172,11 +177,7 @@ def main():
 
     process_dir = os.path.join(pkg, "_过程")
     if os.path.isdir(process_dir):
-        if args.keep_process:
-            print(f"保留过程目录（--keep-process）: {process_dir}")
-        else:
-            shutil.rmtree(process_dir)
-            print("已删除: _过程/")
+        print(f"保留过程目录: {process_dir}")
 
     allowed = set(BASE_ALLOWED)
     if scope_word == "全平台":
@@ -200,7 +201,7 @@ def main():
     pref_note = " / 偏好分析.md" if os.path.isfile(pref) else ""
     plat_note = " / 平台偏好/" if scope_word == "全平台" else ""
     print(
-        f"交付完成。客户主交付: {gal} ｜ 归档: README.md / 视频索引.md / 文案/ / _机器可读/{pref_note}{plat_note}"
+        f"打包检查通过（仍需内容复核与页面验收）。客户主交付: {gal} ｜ 归档: README.md / 视频索引.md / 文案/ / _机器可读/{pref_note}{plat_note}"
     )
     print(
         f"包: {os.path.basename(pkg)} ｜ 平台范围: {scope_word} ｜ "

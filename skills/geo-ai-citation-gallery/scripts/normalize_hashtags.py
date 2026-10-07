@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Normalize Douyin hashtags to at most 5. See references/hashtags.md."""
+"""Normalize analytical hashtags without truncation. See references/hashtags.md."""
 from __future__ import annotations
 
 import argparse
 import json
 import re
 import sys
+import unicodedata
+from copy import deepcopy
 from pathlib import Path
 
 
 def _norm_one(tag: str) -> str:
-    t = (tag or "").strip()
+    t = unicodedata.normalize("NFKC", tag or "").strip()
     if not t:
         return ""
     if not t.startswith("#"):
@@ -18,11 +20,11 @@ def _norm_one(tag: str) -> str:
     return t
 
 
-def normalize_hashtags(tags, limit: int = 5) -> tuple[list[str], bool]:
+def normalize_hashtags(tags, limit: int | None = None) -> tuple[list[str], bool]:
     if tags is None:
         return [], False
     if isinstance(tags, str):
-        parts = re.split(r"[\s,，]+", tags.replace("＃", "#"))
+        parts = re.split(r"[\s,，]+", unicodedata.normalize("NFKC", tags))
         tags = [p for p in parts if p.strip()]
     seen: set[str] = set()
     out: list[str] = []
@@ -35,30 +37,35 @@ def normalize_hashtags(tags, limit: int = 5) -> tuple[list[str], bool]:
             continue
         seen.add(key)
         out.append(t)
-    truncated = len(out) > limit
-    return out[:limit], truncated
+    truncated = limit is not None and len(out) > limit
+    return out, truncated
 
 
-def _patch_obj(obj: dict, limit: int) -> bool:
+def _patch_obj(obj: dict, limit: int | None = None) -> bool:
     if "hashtags" not in obj and "tags" not in obj:
         return False
+    if limit is not None and limit < 0:
+        raise ValueError("limit must be non-negative")
     key = "hashtags" if "hashtags" in obj else "tags"
-    raw = obj.get(key)
-    new, truncated = normalize_hashtags(raw, limit=limit)
-    if truncated and "hashtags_raw" not in obj:
-        obj["hashtags_raw"] = list(raw) if isinstance(raw, list) else raw
+    obj.setdefault("hashtags_raw", deepcopy(obj.get(key)))
+    # Repeated runs always derive analytical tags from the preserved source.
+    new, truncated = normalize_hashtags(obj["hashtags_raw"], limit=limit)
     obj[key] = new
-    if truncated:
-        obj["hashtags_truncated"] = True
+    obj["hashtags"] = new
+    if limit is not None:
+        obj["hashtags_display"] = new[:limit]
+        obj["hashtags_display_truncated"] = truncated
     return True
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Cap hashtags at 5 (Douyin limit).")
+    ap = argparse.ArgumentParser(description="Preserve source tags and normalize all analytical tags.")
     ap.add_argument("path", type=Path, help="JSON file: object, list, or {items|videos|data: [...]}")
-    ap.add_argument("--limit", type=int, default=5)
+    ap.add_argument("--limit", type=int, default=None, help="Optional display-only cap; analytical hashtags stay complete")
     ap.add_argument("-i", "--inplace", action="store_true")
     args = ap.parse_args()
+    if args.limit is not None and args.limit < 0:
+        ap.error("--limit must be non-negative")
     data = json.loads(args.path.read_text(encoding="utf-8"))
     changed = False
     if isinstance(data, list):

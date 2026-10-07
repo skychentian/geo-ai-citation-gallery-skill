@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.DS_Store
+skills/geo-ai-citation-gallery/assets/images/
+skills/geo-ai-citation-gallery/assets/transcripts/
