@@ -3,7 +3,7 @@
 Batch-fetch Douyin engagement (digg / collect / share / follower / duration)
 for a gallery package produced by geo-ai-citation-gallery.
 
-Validated 2026-09-19 on 康丽根 Top50: digg 45/50, collect 43/50 via public pages
+Validated 2026-09-19 on 某客户 Top50: digg 45/50, collect 43/50 via public pages
 (Playwright + data-e2e), no login bypass, no invented numbers.
 
 Usage:
@@ -25,10 +25,7 @@ import time
 import traceback
 from pathlib import Path
 
-try:
-    from playwright.sync_api import sync_playwright
-except ImportError as e:
-    raise SystemExit("需要 playwright：pip install playwright && playwright install chromium") from e
+
 
 EXTRACT_JS = r"""
 () => {
@@ -227,17 +224,17 @@ def fetch_one(page, it: dict, wait_ms: int = 4500) -> dict:
         if rec["digg_count"] is None or rec["collect_count"] is None:
             rec["status"] = "partial"
     else:
-        # Platform-zero: visible 赞|收藏|分享 icons with no digits
+        # Bare icons do not prove zero; retain missing values.
         zero = next((c for c in cands if c.get("zeroDisplay") and not c.get("login")), None)
         if zero:
             rec.update(
                 {
-                    "status": "ok",
-                    "source": "Douyin DOM; bare 赞｜收藏｜分享（无数字=平台零互动展示）",
-                    "digg_count": 0,
-                    "collect_count": 0,
-                    "share_count": 0,
-                    "comment_count": 0,
+                    "status": "missing",
+                    "source": "Douyin DOM; bare interaction icons without numbers; keep missing",
+                    "digg_count": None,
+                    "collect_count": None,
+                    "share_count": None,
+                    "comment_count": None,
                     "duration_sec": zero.get("duration"),
                     "follower_count": zero.get("follower"),
                     "page_url": zero.get("page_url") or zero.get("href"),
@@ -259,6 +256,10 @@ def fetch_one(page, it: dict, wait_ms: int = 4500) -> dict:
 
 
 def main() -> int:
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as e:
+        raise SystemExit("需要 playwright：pip install playwright && playwright install chromium") from e
     ap = argparse.ArgumentParser(description="Fetch Douyin digg/collect/share for gallery TopN")
     ap.add_argument("--package", required=True, help="分析包根目录（含 gallery/data.json）")
     ap.add_argument("--headed", action="store_true", help="有头浏览器（遇墙更易观察）")

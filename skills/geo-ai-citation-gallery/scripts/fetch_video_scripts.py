@@ -24,7 +24,7 @@ import os
 import re
 from datetime import datetime
 
-HEADER_FIELDS = ["来源", "平台", "账号", "发布时间", "时长", "播放量", "总字数", "拉取状态"]
+HEADER_FIELDS = ["来源", "平台", "账号", "发布时间", "时长", "播放量", "总字数", "拉取状态", "文案类型"]
 
 TEMPLATE = """# {title}
 
@@ -34,6 +34,7 @@ TEMPLATE = """# {title}
 > 发布时间：
 > 时长：
 > 播放量：
+> 文案类型：未知
 > 总字数：
 > 拉取状态：{status}
 
@@ -42,25 +43,10 @@ TEMPLATE = """# {title}
 （待填入拉取到的视频文案/逐字稿。抖音用 web.fetch 快速路径；快手/B 站用 doubao-video-extract。）
 """
 
-PLACEHOLDER = """# 【未拉取到】{title}
-
-> 来源：{url}
-> 平台：{site}
-> 账号：
-> 发布时间：
-> 时长：
-> 播放量：
-> 总字数：0
-> 拉取状态：{status}
-
----
-
-（未能获取可用文案。原因：{reason}）
-"""
-
 STATUS_LABEL = {
     "ok": "已拉取",
-    "short": "未拉取到·过短",
+    "short": "已拉取·短文案",
+    "pending": "待拉取",
     "dead": "未拉取到·失效",
     "blocked": "未拉取到·受限",
     "bgm": "纯BGM无口播",
@@ -74,37 +60,21 @@ def _slug(title):
 
 
 def _needs_retry(it):
-    if it.get("analysis_eligible") is True:
-        return False
-    return True
+    return it.get("fetch_status") not in {"ok", "bgm"}
 
 
 def write_template(path, it):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    if not os.path.exists(path) or os.path.getsize(path) < 40:
+    if not os.path.exists(path):
         with open(path, "w", encoding="utf-8") as f:
             f.write(TEMPLATE.format(
                 title=it.get("title") or "（无标题）",
                 url=it.get("url") or "",
                 site=it.get("site") or it.get("domain") or "",
-                status=STATUS_LABEL["ok"],
+                status=STATUS_LABEL["pending"],
             ))
         return True
     return False
-
-
-def write_placeholder(path, it, status, reason):
-    title = (it.get("title") or "（无标题）").strip()
-    label = STATUS_LABEL.get(status, "未拉取到")
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(PLACEHOLDER.format(
-            title=title,
-            url=it.get("url") or "",
-            site=it.get("site") or it.get("domain") or "",
-            status=label,
-            reason=reason,
-        ))
 
 
 def parse_meta(text):
@@ -113,7 +83,7 @@ def parse_meta(text):
     for field in HEADER_FIELDS:
         m = re.search(rf"^> {re.escape(field)}：(.+)$", text, re.M)
         meta[field] = m.group(1).strip() if m else ""
-    body = text
+    body = ""
     m = re.search(r"^---\s*\n(.*)$", text, re.S | re.M)
     if m:
         body = m.group(1)
@@ -161,54 +131,57 @@ def main():
     # ---- 扫描回写 ----
     if args.verify:
         if args.retry_failed:
-            videos = [v for v in videos if _needs_retry(v)]
+            videos = [v for v in videos if _needs_retry(v) or not v.get("script_path")
+                      or not os.path.isfile(os.path.join(pkg, v["script_path"]))]
         records = []
         for it in videos:
             rel = it.get("script_path") or ""
             path = os.path.join(pkg, rel) if rel else ""
             rank = it.get("rank")
             title = it.get("title") or ""
-            if not path or not os.path.isfile(path):
-                write_placeholder(path, it, "fail", "缺文件")
-                records.append((rank, title, "fail", 0, rel))
-                continue
-            with open(path, encoding="utf-8") as f:
-                text = f.read()
-            meta, body = parse_meta(text)
+            if path and os.path.isfile(path):
+                with open(path, encoding="utf-8") as f:
+                    meta, body = parse_meta(f.read())
+            else:
+                meta, body = {}, ""
             status_raw = meta.get("拉取状态", "")
             word_count = len(re.sub(r"\s", "", body))
-            # 判定：先认占位/占位标记，再认状态，最后认字数
-            is_placeholder = "待填入" in body or "未能获取" in body or "待填入拉取" in text
-            if title.startswith("【未拉取到】") or text.startswith("# 【未拉取到】") or is_placeholder:
-                status = "fail"
-                reason = status_raw or "未拉取"
-                eligible = False
+            placeholder = body.startswith("（待填入") or body.startswith("（未能获取")
+            if not path or not os.path.isfile(path):
+                status, reason = "fail", "缺文件"
+            elif placeholder or status_raw.startswith("待"):
+                status, reason = "pending", "待拉取或核验"
             elif status_raw.startswith("纯BGM"):
-                status = "bgm"
-                reason = "纯BGM无口播"
-                eligible = False
-            elif word_count < 50:
-                status = "short"
-                reason = "过短"
-                eligible = False
+                status, reason = "bgm", "纯BGM无口播"
+            elif "受限" in status_raw:
+                status, reason = "blocked", status_raw
+            elif "失效" in status_raw:
+                status, reason = "dead", status_raw
+            elif status_raw.startswith("未拉取") or not body:
+                status, reason = "fail", status_raw or "缺正文"
+            elif status_raw.startswith("已拉取"):
+                status, reason = "ok", ""
             else:
-                status = "ok"
-                reason = "ok"
-                eligible = True
-            if status != "ok":
-                write_placeholder(path, it, status, reason)
-                word_count = 0
-            fields = {
-                "fetch_status": status,
-                "fail_reason": reason,
-                "account": meta.get("账号", ""),
-                "publish_date": meta.get("发布时间", ""),
-                "duration": meta.get("时长", ""),
-                "play_count": meta.get("播放量", ""),
-                "word_count": word_count if status == "ok" else 0,
-                "analysis_eligible": eligible,
+                status, reason = "pending", "拉取状态待核验"
+            # 正文长度不能证明证据类型；未知正文保留，但不作为口播依据。
+            kind = meta.get("文案类型") or it.get("text_type") or "未知"
+            for target, source in (("account", "账号"), ("publish_date", "发布时间"),
+                                   ("duration", "时长"), ("play_count", "播放量")):
+                if meta.get(source):
+                    it[target] = meta[source]
+            source = meta.get("来源") or it.get("url")
+            usable = status == "ok" and bool(source) and bool(body) and not placeholder
+            evidence = {
+                "title": bool(it.get("title") and it.get("url")),
+                "caption": usable and kind in {"发布文案", "视频描述", "caption"},
+                "transcript": usable and kind in {"口播文案", "口播逐字稿", "字幕转写", "transcript"},
+                "visual": bool(it.get("visual_evidence_source") and it.get("visual_verified") is True),
+                "engagement": bool(it.get("engagement_source") and it.get("engagement_verified") is True),
             }
-            it.update(fields)
+            it.update({"fetch_status": status, "fail_reason": reason,
+                       "text_type": kind, "word_count": word_count,
+                       "eligibility": evidence,
+                       "analysis_eligible": evidence["caption"] or evidence["transcript"]})
             records.append((rank, title, status, word_count, rel))
 
         with open(top_path, "w", encoding="utf-8") as f:
@@ -218,12 +191,12 @@ def main():
         os.makedirs(os.path.dirname(rec_path), exist_ok=True)
         lines = [
             f"# 拉取记录（{datetime.now().strftime('%Y-%m-%d %H:%M')}）\n",
-            "> 每个 Top 序号都有对应 md（失败为【未拉取到】占位）。偏好分析只读 analysis_eligible=true。\n",
+            "> 校验不修改文案、不创建失败占位；按 eligibility 分维度使用证据，缺失与待处理状态保留在清单。\n",
             "| 序号 | 标题 | 状态 | 字数 | 文件 |",
             "|---|---|---|---|---|",
         ]
         for rank, title, status, wc, rel in records:
-            lines.append(f"| {rank:02d} | {title} | {status} | {wc} | {rel} |")
+            lines.append(f"| {rank} | {title} | {status} | {wc} | {rel} |")
         with open(rec_path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
 
@@ -232,10 +205,10 @@ def main():
         bgm = sum(1 for r in records if r[2] == "bgm")
         fail = sum(1 for r in records if r[2] == "fail")
         print(
-            f"\n完成：共 {len(records)} 条 ｜ 可分析 {ok} · 过短 {short} · 纯BGM {bgm} · 失败 {fail}"
+            f"\n完成：共 {len(records)} 条 ｜ 已获取正文 {ok} · 短文案 {short} · 纯BGM {bgm} · 失败 {fail}"
         )
         print(f"过程记录: {rec_path}")
-        print("下一步: 按 analysis-phase.md 派子 Agent 写偏好")
+        print("下一步: 按 analysis-phase.md 分维度分析证据，按需分工")
         return
 
     ap.print_help()

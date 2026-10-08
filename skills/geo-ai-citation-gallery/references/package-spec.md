@@ -23,7 +23,8 @@
 ```text
 gallery/
 ├── index.html            # 晨光陶瓷五 Tab 画廊（套 assets/template.html）
-└── images/               # 画面帧（从 shots/ 拷贝）
+├── images/               # 画面帧（从 shots/ 拷贝）
+└── vendor/               # 从技能 assets/vendor/ 原样复制 Chart.js，供离线图表使用
 ```
 
 也允许把 `index.html` + `images/` 放在包根（兼容旧布局）；推荐 `gallery/`。
@@ -44,20 +45,20 @@ _机器可读/top.json
 ```text
 偏好分析.md               # 子 Agent 偏好长文；洞察应已写入画廊 Tab
 平台偏好/                 # 仅全平台模式
-shots/ / work/            # 抓画面过程产物（可留可清）
+shots/ / work/            # 抓画面过程证据（默认保留）
 ```
 
 ## 过程文件
 
 - 跑的过程中：JSON 明细、拉取记录、原始文本、视频池等 → 一律进 `_过程/`。
-- 偏好/画廊定稿后：跑 `scripts/finalize_package.py` **删除 `_过程/`**。
-- 根目录出现拉取状态、含并列、清洗前备份等 = 未完成。
+- 定稿后运行 `scripts/finalize_package.py` 做无删除的打包检查，保留 `_过程/`。
+- 清理必须另有明确授权；原始文本、去重映射和引用证据不能为目录整洁而自动删除。
 
 ## 完成定义
 
 1. 客户主交付画廊齐全（`gallery/index.html` + 画面）；文案目录与 `top.json` 齐全。
-2. 无 `_过程/` 目录（除非 `--keep-process`）。
-3. `top.json` 里文案文件与状态一致；**偏好与画廊分析只引用 `analysis_eligible=true` 的样本**。
-4. **每个 Top 序号都必须有对应 md**（含拉取失败）：不得空号。失败文件标题加 `【未拉取到】`；不得当范文写进偏好结论。在 README 交代排除数量。
+2. `_过程/` 默认保留；对客副本可另建，不能以删除证据作为完成条件。
+3. `top.json` 里文案文件与状态一致；**每个分析维度只使用该维度 evidence eligibility 为真的样本，说明其有效数量；analysis_eligible 仅为旧字段兼容，不能替代逐维度检查**。
+4. **每个 Top 序号都必须有对应 md**（含拉取失败）：不得空号。缺失材料应有状态说明；已抓取正文不得改写为失败占位。未验证的证据不得当范文。在 README 交代排除数量。
 5. 文案头统一字段：`来源` / `平台` / `账号` / `发布时间` / `时长` / `播放量` / `总字数` / `拉取状态`。
-6. 画廊过 [`qa-checklist.md`](qa-checklist.md) P0。
+6. 打包检查通过不等于交付完成；还须数据检查、页面检查和适用的人工验收。画廊过 [`qa-checklist.md`](qa-checklist.md) P0。
