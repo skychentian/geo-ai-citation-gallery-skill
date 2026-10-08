@@ -40,13 +40,13 @@ python3 scripts/merge_fetch.py --package <分析包> --fetch <douyin_fetch 输�
 ```
 
 - `--dry-run` 只把差异摘要打到标准输出，不写盘。确认后再去掉它真跑。
-- 默认只填空（`null`、空字符串、空列表、「暂未抓取到」、「暂未获取」），不覆盖已有人工值。两边都有值且不同记「冲突（未覆盖）」。字符串只差空白（换行、连续空格、首尾空格）视为相同，不记冲突，`--overwrite` 也不改。
+- 默认只填空；例外：发布文案（original_desc / post_desc / post_title）和发布日期 publish_date 在平台确认（field_status=ok）时默认用抖音原文覆盖，旧值→新值进报告；人工文案存 original_desc_prev，诊断包标题保留在 citation_title；--keep-manual-desc-date 恢复只填空。两边都有值且不同、又没被覆盖时记「冲突（未覆盖）」。字符串只差空白（换行、连续空格、首尾空格）视为相同，不算改动，`--overwrite` 也不改。
 - `--overwrite`：脚本有可靠值时覆盖人工值，报告列出旧值 → 新值。`content_type` 只在人工为空时填，不覆盖。
-- `--overwrite-fields`：只覆盖列出的字段，其他字段仍只填空。例如 `--overwrite-fields original_desc`。未知字段名报错退出。与 `--overwrite` 同时给出时，以 `--overwrite`（全部可写字段）为准，并在报告里写明。
+- `--overwrite-fields`：只覆盖列出的字段，其他字段仍只填空。与默认文案日期覆盖叠加。例如 `--overwrite-fields original_desc`。未知字段名报错退出。与 `--overwrite` 同时给出时，以 `--overwrite`（全部可写字段）为准，并在报告里写明。
 - 写入前把 `gallery/data.json` 备份为同目录 `data.json.bak-merge-YYYYMMDDHHMMSS`。
 - 报告写到 `<分析包>/work/merge_fetch/merge-report-YYYYMMDDHHMMSS.md` 和同名 `.json`。
 - 新增 `post_title`（平台发布标题，附 `post_title_source`）和 `citation_title`（包内 `_机器可读/top.json` 里同 `video_id` 的 AI 引用标题）。`title` / `title_short` 原样保留。当前模板不读这两个新字段，页面不变；以后要显示再改模板。
-- 新增 `post_desc`：平台发布文案全文，取 `items.json` 的 `original_desc`，且 `field_status.desc` 为 ok 才写，默认只填空。`original_desc` 仍按填空 / 覆盖规则处理，不因写入 `post_desc` 而被改掉。模板和 `build_report` 的「发布文案全文」读 `original_desc`。若它与 `citation_title` 相同而 `post_desc` 不同，报告会列出「original_desc 实为诊断包引用标题」；要让页面显示平台真实文案，跑 `--overwrite-fields original_desc`。
+- 新增 `post_desc`：平台发布文案全文，取 `items.json` 的 `original_desc`，且 `field_status.desc` 为 ok 才写。`original_desc` 仍按填空 / 覆盖规则处理，不因写入 `post_desc` 而被改掉。模板和 `build_report` 的「发布文案全文」读 `original_desc`。若它与 `citation_title` 相同而 `post_desc` 不同，报告会列出「original_desc 实为诊断包引用标题」；默认已用抖音原文覆盖 `original_desc`，页面显示平台真实文案。
 - 人工已有 `transcript` 但没有 `transcript_status` 时，补 `transcript_status=pending`。
 - 图片复制到 `shots/douyin_fetch/NN/` 留证据。只有 `data.images` 真被写入（空才填，或按覆盖规则替换）时，才同时复制进 `gallery/images/douyin_fetch/NN/`。可补图（未改）只进 shots，不进 images。已有同名文件不覆盖。`--dry-run` 不复制任何文件。视频（mp4 / m4a）默认不复制，仍留在 fetch 输出目录；要复制进 shots 再加 `--shots-video`。
 

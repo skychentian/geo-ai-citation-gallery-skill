@@ -66,6 +66,13 @@ def rows_of(payload):
     return payload if isinstance(payload, list) else payload["data"]
 
 
+def _split_overwrite_sections(md: str):
+    default_at = md.index("## 默认覆盖：发布文案 / 日期（旧值 → 新值）")
+    overwrite_at = md.index("## 覆盖（旧值 → 新值）")
+    conflict_at = md.index("## 冲突（未覆盖）")
+    return md[default_at:overwrite_at], md[overwrite_at:conflict_at], md[conflict_at:]
+
+
 def report_of(pkg):
     folder = pkg / "work" / "merge_fetch"
     docs = sorted(folder.glob("merge-report-*.json"))
@@ -214,6 +221,13 @@ class MergeFetchTests(unittest.TestCase):
             self.assertEqual(alias["title"], "original_desc 实为诊断包引用标题")
             self.assertEqual(alias["count"], 0)
             self.assertIn("## original_desc 实为诊断包引用标题", md)
+            self.assertIn("## 默认覆盖：发布文案 / 日期", md)
+            self.assertIn("## title 来源", md)
+            self.assertFalse(_report["keep_manual_desc_date"])
+            self.assertIn("desc_date_overwritten", _report)
+            self.assertIn("whitespace_unchanged", _report["desc_date_stats"])
+            self.assertEqual(_report["original_desc_prev_saved"], [])
+            self.assertEqual(_report["title_source"]["other_ranks"], [1])
 
     def test_does_not_overwrite_manual_values_including_zero(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -226,7 +240,7 @@ class MergeFetchTests(unittest.TestCase):
             )
             item = base_item(digg_count=9, original_desc="发布文案全文", hashtags=["#标签"], publish_date="2026-04-27")
             pkg, fetch, original = write_case(tmp, [row], [item], [status_row(1, "100", full=True)])
-            result = run_merge(pkg, fetch)
+            result = run_merge(pkg, fetch, "--keep-manual-desc-date")
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             got = rows_of(load_payload(pkg))[0]
             self.assertEqual(got["digg_count"], 0)
@@ -237,8 +251,12 @@ class MergeFetchTests(unittest.TestCase):
             self.assertEqual(got["title"], "人工标题")
             self.assertIn("冲突（未覆盖）", result.stdout)
             self.assertIn("人工 6月28日 / 脚本 2026-04-27", result.stdout)
+            self.assertIn("已关闭，按只填空", result.stdout)
             self.assertNotIn("人工 0 可疑", result.stdout)
             self.assertEqual((pkg / "gallery" / "data.json").read_bytes(), original)
+            report, _md = report_of(pkg)
+            self.assertTrue(report["keep_manual_desc_date"])
+            self.assertEqual(report["desc_date_overwritten"], [])
 
     def test_marks_suspect_manual_zero_without_overwriting(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -637,6 +655,10 @@ class MergeFetchTests(unittest.TestCase):
             report, md = report_of(pkg)
             self.assertFalse(any(item["field"] == "original_desc" for item in report["conflicts"]))
             self.assertFalse(any(item["field"] == "original_desc" for item in report["overwritten"]))
+            self.assertFalse(any(item["field"] == "original_desc" for item in report["desc_date_overwritten"]))
+            self.assertEqual(report["desc_date_stats"]["whitespace_unchanged"], 1)
+            self.assertEqual(report["desc_date_stats"]["original_desc"], 0)
+            self.assertIn("只差空白，未改：1", md)
             self.assertIn("## 冲突（未覆盖）\n\n无", md)
             self.assertEqual((pkg / "gallery" / "data.json").read_bytes(), original)
         with tempfile.TemporaryDirectory() as tmp:
@@ -683,34 +705,42 @@ class MergeFetchTests(unittest.TestCase):
             result = run_merge(pkg, fetch)
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             got = {row["video_id"]: row for row in rows_of(load_payload(pkg))}
-            self.assertEqual(got["100"]["original_desc"], citation)
+            self.assertEqual(got["100"]["original_desc"], post)
             self.assertEqual(got["100"]["post_desc"], post)
             self.assertEqual(got["100"]["citation_title"], citation)
+            self.assertNotIn("original_desc_prev", got["100"])
             self.assertEqual(got["100"]["title"], "人工标题")
-            self.assertEqual(got["200"]["original_desc"], manual2)
+            self.assertEqual(got["200"]["original_desc"], post)
+            self.assertEqual(got["200"]["original_desc_prev"], manual2)
             self.assertEqual(got["200"]["post_desc"], post)
+            self.assertEqual(got["200"]["citation_title"], citation)
             self.assertIsNone(got["300"]["original_desc"])
             self.assertNotIn("post_desc", got["300"])
             report, md = report_of(pkg)
             alias = report["original_desc_is_citation_title"]
             self.assertEqual(alias["title"], "original_desc 实为诊断包引用标题")
-            self.assertIn("--overwrite-fields original_desc", alias["note"])
+            self.assertNotIn("--overwrite-fields original_desc", alias["note"])
+            self.assertIn("已被默认覆盖", alias["note"])
             self.assertEqual(alias["count"], 1)
-            self.assertEqual(alias["entries"][0]["rank"], 1)
-            self.assertEqual(alias["entries"][0]["video_id"], "100")
-            self.assertEqual(alias["entries"][0]["original_desc"], citation[:40])
-            self.assertEqual(alias["entries"][0]["post_desc"], post[:40])
-            self.assertIn("## original_desc 实为诊断包引用标题", md)
-            self.assertIn(citation[:40], md)
-            self.assertIn(post[:40], md)
-            self.assertIn("rank 1 video_id 100：original_desc「", md)
-            self.assertNotIn("rank 2 video_id 200：original_desc「", md)
+            self.assertEqual(alias["entries"], [])
+            self.assertEqual(alias["presentation"], "count")
+            self.assertIn("共 1 条已被默认覆盖", md)
+            self.assertNotIn("rank 1 video_id 100：original_desc「", md)
+            overwritten = [item for item in report["desc_date_overwritten"] if item["field"] == "original_desc"]
+            self.assertEqual([item["video_id"] for item in overwritten], ["100", "200"])
+            self.assertEqual(report["desc_date_stats"]["original_desc"], 2)
+            self.assertEqual([item["video_id"] for item in report["original_desc_prev_saved"]], ["200"])
+            self.assertIn("默认覆盖：发布文案 / 日期", md)
+            self.assertIn("存进 original_desc_prev", md)
 
-    def test_overwrite_fields_only_updates_listed_fields(self):
+    def test_overwrite_fields_flags_listed_and_defaults_other_desc_date(self):
         with tempfile.TemporaryDirectory() as tmp:
             row = filled_manual(
                 original_desc="人工文案",
                 post_desc="已有发布文案",
+                post_title="旧平台标题",
+                post_title_source="oldSource",
+                publish_date="2020-01-01",
                 digg_count=3,
                 collect_count=2,
             )
@@ -720,18 +750,140 @@ class MergeFetchTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             got = rows_of(load_payload(pkg))[0]
             self.assertEqual(got["original_desc"], "发布文案全文")
-            self.assertEqual(got["post_desc"], "已有发布文案")
+            self.assertEqual(got["original_desc_prev"], "人工文案")
+            self.assertEqual(got["post_desc"], "发布文案全文")
+            self.assertEqual(got["post_title"], "平台发布标题")
+            self.assertEqual(got["post_title_source"], "itemTitle")
+            self.assertEqual(got["publish_date"], "2026-04-27")
             self.assertEqual(got["digg_count"], 9)
             self.assertEqual(got["collect_count"], 2)
             self.assertEqual(got["content_type"], "口播")
             report, md = report_of(pkg)
             self.assertEqual([item["field"] for item in report["overwritten"]], ["original_desc", "digg_count"])
             self.assertEqual(
-                {item["field"] for item in report["conflicts"]},
-                {"collect_count", "post_desc"},
+                [item["field"] for item in report["desc_date_overwritten"]],
+                ["post_desc", "publish_date", "post_title", "post_title_source"],
             )
+            self.assertEqual({item["field"] for item in report["conflicts"]}, {"collect_count"})
             self.assertIn("人工文案", md)
-            self.assertIn("只覆盖 original_desc、digg_count", md)
+            self.assertIn("未列出的发布文案和发布日期仍按默认覆盖", md)
+            self.assertNotIn("未启用默认文案日期覆盖", md)
+            self.assertEqual(report["field_stats"]["original_desc"]["overwritten"], 1)
+            self.assertEqual(report["field_stats"]["original_desc"]["default_overwritten"], 0)
+            self.assertEqual(report["field_stats"]["post_desc"]["default_overwritten"], 1)
+            self.assertEqual(report["field_stats"]["post_desc"]["overwritten"], 0)
+            self.assertEqual(report["field_stats"]["publish_date"]["default_overwritten"], 1)
+            self.assertEqual(report["field_stats"]["digg_count"]["overwritten"], 1)
+            self.assertEqual(report["field_stats"]["digg_count"]["default_overwritten"], 0)
+
+    def test_overwrite_fields_digg_keeps_default_desc_date(self):
+        citation = "诊断包引用标题，不是作者写在作品下的发布文案"
+        with tempfile.TemporaryDirectory() as tmp:
+            row = filled_manual(
+                original_desc=citation,
+                publish_date="2020-01-01",
+                digg_count=3,
+                collect_count=2,
+            )
+            item = base_item(
+                original_desc="抖音发布文案",
+                publish_date="2026-04-27",
+                digg_count=9,
+                collect_count=8,
+            )
+            top = {"videos": [{"video_id": "100", "title": citation}]}
+            pkg, fetch, _original = write_case(
+                tmp, [row], [item], [status_row(1, "100", full=True)], top=top
+            )
+            result = run_merge(pkg, fetch, "--overwrite-fields", "digg_count")
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            got = rows_of(load_payload(pkg))[0]
+            self.assertEqual(got["digg_count"], 9)
+            self.assertEqual(got["original_desc"], "抖音发布文案")
+            self.assertEqual(got["publish_date"], "2026-04-27")
+            self.assertEqual(got["collect_count"], 2)
+            self.assertEqual(got["citation_title"], citation)
+            self.assertNotIn("original_desc_prev", got)
+            report, md = report_of(pkg)
+            self.assertEqual([item["field"] for item in report["overwritten"]], ["digg_count"])
+            default_fields = [item["field"] for item in report["desc_date_overwritten"]]
+            self.assertIn("original_desc", default_fields)
+            self.assertIn("publish_date", default_fields)
+            self.assertNotIn("digg_count", default_fields)
+            conflict_fields = {item["field"] for item in report["conflicts"]}
+            self.assertIn("collect_count", conflict_fields)
+            self.assertNotIn("original_desc", conflict_fields)
+            self.assertNotIn("publish_date", conflict_fields)
+            self.assertEqual(report["field_stats"]["digg_count"]["overwritten"], 1)
+            self.assertEqual(report["field_stats"]["digg_count"]["default_overwritten"], 0)
+            self.assertEqual(report["field_stats"]["original_desc"]["default_overwritten"], 1)
+            self.assertEqual(report["field_stats"]["original_desc"]["overwritten"], 0)
+            self.assertEqual(report["field_stats"]["publish_date"]["default_overwritten"], 1)
+            self.assertEqual(report["field_stats"]["publish_date"]["overwritten"], 0)
+            alias = report["original_desc_is_citation_title"]
+            self.assertEqual(alias["presentation"], "count")
+            self.assertIn("已被默认覆盖", alias["note"])
+            self.assertNotIn("--overwrite-fields original_desc", alias["note"])
+            self.assertEqual(alias["entries"], [])
+            self.assertEqual(alias["count"], 1)
+            default_section, overwrite_section, _conflict_section = _split_overwrite_sections(md)
+            self.assertIn(f"original_desc：{citation} → 抖音发布文案", default_section)
+            self.assertIn("publish_date：2020-01-01 → 2026-04-27", default_section)
+            self.assertNotIn("digg_count：", default_section)
+            self.assertIn("digg_count：3 → 9", overwrite_section)
+            self.assertNotIn("original_desc：", overwrite_section)
+            self.assertNotIn("publish_date：", overwrite_section)
+            self.assertNotIn("未启用默认文案日期覆盖", md)
+            self.assertIn("未列出的发布文案和发布日期仍按默认覆盖", md)
+
+    def test_overwrite_fields_digg_keep_manual_desc_conflicts(self):
+        citation = "诊断包引用标题，不是作者写在作品下的发布文案"
+        with tempfile.TemporaryDirectory() as tmp:
+            row = filled_manual(
+                original_desc=citation,
+                publish_date="2020-01-01",
+                digg_count=3,
+            )
+            item = base_item(
+                original_desc="抖音发布文案",
+                publish_date="2026-04-27",
+                digg_count=9,
+            )
+            top = {"videos": [{"video_id": "100", "title": citation}]}
+            pkg, fetch, _original = write_case(
+                tmp, [row], [item], [status_row(1, "100", full=True)], top=top
+            )
+            result = run_merge(
+                pkg, fetch, "--overwrite-fields", "digg_count", "--keep-manual-desc-date"
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            got = rows_of(load_payload(pkg))[0]
+            self.assertEqual(got["digg_count"], 9)
+            self.assertEqual(got["original_desc"], citation)
+            self.assertEqual(got["publish_date"], "2020-01-01")
+            self.assertNotIn("original_desc_prev", got)
+            report, md = report_of(pkg)
+            self.assertTrue(report["keep_manual_desc_date"])
+            self.assertEqual(report["mode"], "overwrite-fields")
+            self.assertEqual([item["field"] for item in report["overwritten"]], ["digg_count"])
+            self.assertEqual(report["desc_date_overwritten"], [])
+            conflict_fields = {item["field"] for item in report["conflicts"]}
+            self.assertIn("original_desc", conflict_fields)
+            self.assertIn("publish_date", conflict_fields)
+            self.assertNotIn("digg_count", conflict_fields)
+            alias = report["original_desc_is_citation_title"]
+            self.assertEqual(alias["presentation"], "list")
+            self.assertIn("--overwrite-fields original_desc", alias["note"])
+            self.assertEqual(alias["count"], 1)
+            self.assertEqual(alias["entries"][0]["video_id"], "100")
+            default_section, overwrite_section, conflict_section = _split_overwrite_sections(md)
+            self.assertNotIn("original_desc：", default_section)
+            self.assertIn("按只填空", default_section)
+            self.assertIn("digg_count：3 → 9", overwrite_section)
+            self.assertNotIn("original_desc：", overwrite_section)
+            self.assertIn(f"original_desc：人工 {citation} / 脚本 抖音发布文案", conflict_section)
+            self.assertIn("publish_date：人工 2020-01-01 / 脚本 2026-04-27", conflict_section)
+            self.assertNotIn("未启用默认文案日期覆盖", md)
 
     def test_overwrite_flag_overrides_overwrite_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -756,6 +908,11 @@ class MergeFetchTests(unittest.TestCase):
             self.assertIn("original_desc", overwritten)
             self.assertIn("post_desc", overwritten)
             self.assertNotIn("content_type", overwritten)
+            self.assertEqual(report["desc_date_overwritten"], [])
+            self.assertEqual(got["original_desc_prev"], "人工文案")
+            self.assertEqual(report["field_stats"]["original_desc"]["overwritten"], 1)
+            self.assertEqual(report["field_stats"]["original_desc"]["default_overwritten"], 0)
+            self.assertIn("| 字段 | 填空 | 默认覆盖 | --overwrite 覆盖 |", md)
 
     def test_unknown_overwrite_field_exits_nonzero(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -955,6 +1112,400 @@ class MergeFetchTests(unittest.TestCase):
             self.assertNotEqual(bad.returncode, 0)
             missing = run_merge(pkg, fetch, "--data", "missing.json")
             self.assertNotEqual(missing.returncode, 0)
+
+    def test_help_mentions_default_desc_date_overwrite(self):
+        env = os.environ.copy()
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        result = subprocess.run(
+            [sys.executable, "-B", str(SCRIPT), "--help"],
+            capture_output=True, text=True, env=env,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--keep-manual-desc-date", result.stdout)
+        self.assertIn("发布文案", result.stdout)
+        self.assertIn("publish_date", result.stdout)
+        self.assertIn("content_type", result.stdout)
+
+    def test_default_overwrites_desc_and_date_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            row = filled_manual(
+                original_desc="人工文案",
+                post_desc="旧发布文案",
+                post_title="旧平台标题",
+                post_title_source="oldSource",
+                publish_date="2020-01-01",
+                digg_count=3,
+                hashtags=["#保留"],
+                account_name="旧账号",
+                transcript="旧口播",
+                images=["keep.jpg"],
+                content_type="口播",
+            )
+            item = base_item(
+                original_desc="抖音发布文案",
+                title="抖音平台标题",
+                title_source="itemTitle",
+                publish_date="2026-04-27",
+                digg_count=9,
+                hashtags=["#标签"],
+                account_name="账号甲",
+                transcript="口播自动转写",
+            )
+            pkg, fetch, _original = write_case(tmp, [row], [item], [status_row(1, "100", full=True)])
+            result = run_merge(pkg, fetch)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            got = rows_of(load_payload(pkg))[0]
+            self.assertEqual(got["original_desc"], "抖音发布文案")
+            self.assertEqual(got["original_desc_prev"], "人工文案")
+            self.assertEqual(got["post_desc"], "抖音发布文案")
+            self.assertEqual(got["post_title"], "抖音平台标题")
+            self.assertEqual(got["post_title_source"], "itemTitle")
+            self.assertEqual(got["publish_date"], "2026-04-27")
+            self.assertEqual(got["digg_count"], 3)
+            self.assertEqual(got["hashtags"], ["#保留"])
+            self.assertEqual(got["account_name"], "旧账号")
+            self.assertEqual(got["transcript"], "旧口播")
+            self.assertEqual(got["images"], ["keep.jpg"])
+            self.assertEqual(got["content_type"], "口播")
+            self.assertEqual(got["title"], "人工标题")
+            self.assertEqual(got["title_short"], "人工短标题")
+            report, md = report_of(pkg)
+            fields = [item["field"] for item in report["desc_date_overwritten"]]
+            self.assertEqual(
+                fields,
+                ["original_desc", "post_desc", "publish_date", "post_title", "post_title_source"],
+            )
+            original = next(item for item in report["desc_date_overwritten"] if item["field"] == "original_desc")
+            self.assertEqual(original["old"], "人工文案")
+            self.assertEqual(original["new"], "抖音发布文案")
+            self.assertIn("人工文案 → 抖音发布文案", md)
+            self.assertIn("2020-01-01 → 2026-04-27", md)
+            self.assertEqual(report["desc_date_stats"]["original_desc"], 1)
+            self.assertEqual(report["desc_date_stats"]["post_desc"], 1)
+            self.assertEqual(report["desc_date_stats"]["post_title"], 1)
+            self.assertEqual(report["desc_date_stats"]["post_title_source"], 1)
+            self.assertEqual(report["desc_date_stats"]["publish_date"], 1)
+            self.assertEqual(report["overwritten"], [])
+            self.assertEqual(
+                {item["field"] for item in report["conflicts"]},
+                {"digg_count", "hashtags", "account_name", "transcript"},
+            )
+            self.assertNotIn("content_type", {item["field"] for item in report["conflicts"]})
+            self.assertEqual(report["field_stats"]["original_desc"]["default_overwritten"], 1)
+            self.assertEqual(report["field_stats"]["original_desc"]["overwritten"], 0)
+            self.assertEqual(report["field_stats"]["digg_count"]["default_overwritten"], 0)
+            self.assertEqual(report["original_desc_prev_saved"][0]["video_id"], "100")
+            self.assertFalse(report["keep_manual_desc_date"])
+
+    def test_unreliable_desc_date_keeps_old_value(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = [
+                base_row(rank=1, video_id="s1", original_desc="旧文案", post_desc="旧发布", publish_date="2020-01-01"),
+                base_row(rank=2, video_id="s2", original_desc="旧文案二", publish_date="2020-02-02"),
+                base_row(rank=3, video_id="s3", original_desc="旧文案三", publish_date="2020-03-03", post_title="旧标题", post_title_source="oldSource"),
+                base_row(rank=4, video_id="s4", publish_date="2020-04-04", post_title="旧标题四"),
+            ]
+            items = [
+                base_item(rank=1, video_id="s1", original_desc="新文案", publish_date="2026-04-27"),
+                base_item(rank=2, video_id="s2", original_desc=None, publish_date="6月28日"),
+                base_item(rank=3, video_id="s3", original_desc="新文案三", publish_date="2026/04/27", title="新标题", title_source="itemTitle"),
+                base_item(rank=4, video_id="s4", original_desc="新文案四", publish_date="2026-4-07", title="新标题四", title_source="desc"),
+            ]
+            statuses = [
+                status_row(1, "s1", full=True, desc="missing"),
+                status_row(2, "s2", full=True),
+                status_row(3, "s3", full=True, title="missing"),
+                status_row(4, "s4", full=True, publish_time={"status": "ok", "reason": ""}),
+            ]
+            pkg, fetch, _original = write_case(tmp, rows, items, statuses)
+            result = run_merge(pkg, fetch)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            got = {row["video_id"]: row for row in rows_of(load_payload(pkg))}
+            self.assertEqual(got["s1"]["original_desc"], "旧文案")
+            self.assertEqual(got["s1"]["post_desc"], "旧发布")
+            self.assertEqual(got["s2"]["original_desc"], "旧文案二")
+            self.assertEqual(got["s2"]["publish_date"], "2020-02-02")
+            self.assertEqual(got["s3"]["publish_date"], "2020-03-03")
+            self.assertEqual(got["s3"]["post_title"], "旧标题")
+            self.assertEqual(got["s3"]["post_title_source"], "oldSource")
+            self.assertEqual(got["s4"]["publish_date"], "2020-04-04")
+            self.assertEqual(got["s4"]["post_title"], "新标题四")
+            report, _md = report_of(pkg)
+            blocked_fields = {
+                (item["video_id"], item["field"])
+                for item in report["desc_date_overwritten"] + report["overwritten"] + report["conflicts"]
+            }
+            self.assertNotIn(("s1", "original_desc"), blocked_fields)
+            self.assertNotIn(("s1", "post_desc"), blocked_fields)
+            self.assertNotIn(("s2", "original_desc"), blocked_fields)
+            self.assertNotIn(("s2", "publish_date"), blocked_fields)
+            self.assertNotIn(("s3", "publish_date"), blocked_fields)
+            self.assertNotIn(("s3", "post_title"), blocked_fields)
+            self.assertNotIn(("s4", "publish_date"), blocked_fields)
+
+    def test_keep_manual_desc_date_restores_fill_only(self):
+        citation = "十大净水器品牌排名与选购关键参数解析（诊断包引用标题，不是作者写在作品下的发布文案）"
+        post = "家人们这台净水器我用了三个月，通量、换芯和安装费分开说，别只看标题里的排名和广告词。"
+        manual2 = "这是作者自己写的发布文案，和诊断包标题不是同一句。"
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = [
+                base_row(rank=1, video_id="100", original_desc=citation, publish_date="2020-01-01"),
+                base_row(rank=2, video_id="200", original_desc=manual2, publish_date="2020-02-02"),
+            ]
+            items = [
+                base_item(rank=1, video_id="100", original_desc=post, publish_date="2026-04-27"),
+                base_item(rank=2, video_id="200", original_desc=post, publish_date="2026-05-01"),
+            ]
+            statuses = [status_row(1, "100", full=True), status_row(2, "200", full=True)]
+            top = {"videos": [
+                {"video_id": "100", "title": citation},
+                {"video_id": "200", "title": citation},
+            ]}
+            pkg, fetch, original = write_case(tmp, rows, items, statuses, top=top)
+            result = run_merge(pkg, fetch, "--keep-manual-desc-date")
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            got = {row["video_id"]: row for row in rows_of(load_payload(pkg))}
+            self.assertEqual(got["100"]["original_desc"], citation)
+            self.assertEqual(got["100"]["post_desc"], post)
+            self.assertEqual(got["100"]["citation_title"], citation)
+            self.assertEqual(got["100"]["publish_date"], "2020-01-01")
+            self.assertNotIn("original_desc_prev", got["100"])
+            self.assertEqual(got["200"]["original_desc"], manual2)
+            self.assertEqual(got["200"]["publish_date"], "2020-02-02")
+            self.assertNotIn("original_desc_prev", got["200"])
+            report, md = report_of(pkg)
+            self.assertTrue(report["keep_manual_desc_date"])
+            self.assertEqual(report["desc_date_overwritten"], [])
+            self.assertIn("已关闭，按只填空", md)
+            conflict_fields = {(item["video_id"], item["field"]) for item in report["conflicts"]}
+            self.assertIn(("100", "original_desc"), conflict_fields)
+            self.assertIn(("100", "publish_date"), conflict_fields)
+            self.assertIn(("200", "original_desc"), conflict_fields)
+            alias = report["original_desc_is_citation_title"]
+            self.assertEqual(alias["presentation"], "list")
+            self.assertIn("--overwrite-fields original_desc", alias["note"])
+            self.assertEqual(alias["count"], 1)
+            self.assertEqual(alias["entries"][0]["video_id"], "100")
+            self.assertEqual(alias["entries"][0]["original_desc"], citation[:40])
+            self.assertEqual(alias["entries"][0]["post_desc"], post[:40])
+            self.assertIn("rank 1 video_id 100：original_desc「", md)
+            self.assertNotIn("rank 2 video_id 200：original_desc「", md)
+            self.assertNotEqual((pkg / "gallery" / "data.json").read_bytes(), original)
+
+    def test_citation_title_kept_and_manual_desc_saved(self):
+        citation = "诊断包引用标题全文"
+        with tempfile.TemporaryDirectory() as tmp:
+            row = filled_manual(original_desc=citation, post_desc="旧发布", publish_date="2020-01-01")
+            item = base_item(original_desc="抖音原文", publish_date="2026-04-27")
+            top = {"videos": [{"video_id": "100", "title": citation}]}
+            pkg, fetch, _original = write_case(
+                tmp, [row], [item], [status_row(1, "100", full=True)], top=top
+            )
+            result = run_merge(pkg, fetch)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            got = rows_of(load_payload(pkg))[0]
+            self.assertEqual(got["original_desc"], "抖音原文")
+            self.assertEqual(got["citation_title"], citation)
+            self.assertNotIn("original_desc_prev", got)
+            self.assertEqual(got["title"], "人工标题")
+            report, _md = report_of(pkg)
+            self.assertEqual(report["original_desc_is_citation_title"]["count"], 1)
+            self.assertEqual(report["original_desc_prev_saved"], [])
+        with tempfile.TemporaryDirectory() as tmp:
+            row = filled_manual(
+                original_desc="没有诊断包时的人工文案",
+                original_desc_prev="更早的文案",
+                publish_date="2020-01-01",
+            )
+            item = base_item(original_desc="抖音原文", publish_date="2026-04-27")
+            pkg, fetch, _original = write_case(tmp, [row], [item], [status_row(1, "100", full=True)])
+            result = run_merge(pkg, fetch)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            got = rows_of(load_payload(pkg))[0]
+            self.assertEqual(got["original_desc"], "抖音原文")
+            self.assertEqual(got["original_desc_prev"], "更早的文案")
+            self.assertNotIn("citation_title", got)
+            report, _md = report_of(pkg)
+            self.assertEqual(report["original_desc_prev_saved"], [])
+        with tempfile.TemporaryDirectory() as tmp:
+            row = filled_manual(original_desc="没有诊断包时的人工文案", publish_date="2020-01-01")
+            item = base_item(original_desc="抖音原文")
+            pkg, fetch, _original = write_case(tmp, [row], [item], [status_row(1, "100", full=True)])
+            result = run_merge(pkg, fetch)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            got = rows_of(load_payload(pkg))[0]
+            self.assertEqual(got["original_desc_prev"], "没有诊断包时的人工文案")
+            self.assertEqual(got["citation_title"] if "citation_title" in got else None, None)
+
+    def test_blocked_does_not_overwrite_desc_or_date(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = [
+                filled_manual(
+                    rank=1, video_id="b1", original_desc="人工文案", post_desc="人工发布",
+                    post_title="人工平台标题", publish_date="2020-01-01",
+                ),
+                filled_manual(
+                    rank=2, video_id="b2", original_desc="另一文案", publish_date="2020-02-02",
+                ),
+            ]
+            items = [
+                base_item(rank=1, video_id="b1", status="blocked", original_desc="抖音文案", publish_date="2026-04-27", title="平台标题"),
+                base_item(rank=2, video_id="b2", status="missing", original_desc="抖音文案", publish_date="2026-05-01"),
+            ]
+            statuses = [status_row(1, "b1", full=True), status_row(2, "b2", full=True)]
+            pkg, fetch, original = write_case(tmp, rows, items, statuses)
+            result = run_merge(pkg, fetch)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            got = {row["video_id"]: row for row in rows_of(load_payload(pkg))}
+            self.assertEqual(got["b1"]["original_desc"], "人工文案")
+            self.assertEqual(got["b1"]["post_desc"], "人工发布")
+            self.assertEqual(got["b1"]["post_title"], "人工平台标题")
+            self.assertEqual(got["b1"]["publish_date"], "2020-01-01")
+            self.assertEqual(got["b1"]["digg_count"], 9)
+            self.assertEqual(got["b2"]["original_desc"], "另一文案")
+            self.assertEqual(got["b2"]["publish_date"], "2020-02-02")
+            self.assertEqual((pkg / "gallery" / "data.json").read_bytes(), original)
+            report, _md = report_of(pkg)
+            self.assertEqual(report["desc_date_overwritten"], [])
+            self.assertEqual(report["overwritten"], [])
+
+    def test_keep_manual_does_not_block_overwrite_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            row = filled_manual(original_desc="人工文案", publish_date="2020-01-01", digg_count=3, content_type="口播")
+            item = base_item(original_desc="抖音原文", publish_date="2026-04-27", digg_count=9)
+            pkg, fetch, _original = write_case(tmp, [row], [item], [status_row(1, "100", full=True)])
+            result = run_merge(pkg, fetch, "--overwrite", "--keep-manual-desc-date")
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            got = rows_of(load_payload(pkg))[0]
+            self.assertEqual(got["original_desc"], "抖音原文")
+            self.assertEqual(got["publish_date"], "2026-04-27")
+            self.assertEqual(got["digg_count"], 9)
+            self.assertEqual(got["content_type"], "口播")
+            report, md = report_of(pkg)
+            self.assertTrue(report["keep_manual_desc_date"])
+            self.assertEqual(report["mode"], "overwrite")
+            self.assertEqual(report["desc_date_overwritten"], [])
+            self.assertIn("original_desc", {item["field"] for item in report["overwritten"]})
+            self.assertIn("publish_date", {item["field"] for item in report["overwritten"]})
+            self.assertIn("本次使用 --overwrite", md)
+            self.assertNotIn("content_type", {item["field"] for item in report["overwritten"]})
+
+    def test_post_title_source_follows_only_when_title_accepted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            row = filled_manual(post_title="平台发布标题", post_title_source="oldSource")
+            item = base_item(title="平台发布标题", title_source="itemTitle")
+            pkg, fetch, _original = write_case(tmp, [row], [item], [status_row(1, "100", full=True)])
+            result = run_merge(pkg, fetch)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            got = rows_of(load_payload(pkg))[0]
+            self.assertEqual(got["post_title"], "平台发布标题")
+            self.assertEqual(got["post_title_source"], "itemTitle")
+            report, _md = report_of(pkg)
+            self.assertEqual(
+                [item["field"] for item in report["desc_date_overwritten"]],
+                ["post_title_source"],
+            )
+        with tempfile.TemporaryDirectory() as tmp:
+            row = filled_manual(post_title="旧平台标题", post_title_source="oldSource")
+            item = base_item(title="新平台标题", title_source="itemTitle")
+            pkg, fetch, _original = write_case(tmp, [row], [item], [status_row(1, "100", full=True)])
+            result = run_merge(pkg, fetch, "--keep-manual-desc-date")
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            got = rows_of(load_payload(pkg))[0]
+            self.assertEqual(got["post_title"], "旧平台标题")
+            self.assertEqual(got["post_title_source"], "oldSource")
+            report, _md = report_of(pkg)
+            self.assertNotIn("post_title_source", {item["field"] for item in report["conflicts"]})
+            self.assertIn("post_title", {item["field"] for item in report["conflicts"]})
+
+    def test_title_source_section_marks_citation_prefix(self):
+        citation = "诊断包里的完整引用标题，后面还有选购参数"
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = [
+                base_row(rank=1, video_id="100", title=citation, original_desc=None),
+                base_row(rank=2, video_id="200", title="诊断包里的完整引用标题…", original_desc=None),
+                base_row(rank=5, video_id="300", title="人工另写的标题", original_desc=None),
+            ]
+            items = [
+                base_item(rank=1, video_id="100", title=None, original_desc=None, hashtags=[], account=None,
+                          account_name=None, follower_count=None, digg_count=None, collect_count=None,
+                          share_count=None, comment_count=None, duration_sec=None, publish_date=None,
+                          content_type=None, transcript=None, transcript_status=None),
+                base_item(rank=2, video_id="200", title=None, original_desc=None, hashtags=[], account=None,
+                          account_name=None, follower_count=None, digg_count=None, collect_count=None,
+                          share_count=None, comment_count=None, duration_sec=None, publish_date=None,
+                          content_type=None, transcript=None, transcript_status=None),
+                base_item(rank=5, video_id="300", title=None, original_desc=None, hashtags=[], account=None,
+                          account_name=None, follower_count=None, digg_count=None, collect_count=None,
+                          share_count=None, comment_count=None, duration_sec=None, publish_date=None,
+                          content_type=None, transcript=None, transcript_status=None),
+            ]
+            statuses = [
+                status_row(1, "100"),
+                status_row(2, "200"),
+                status_row(5, "300"),
+            ]
+            top = {"videos": [
+                {"video_id": "100", "title": citation},
+                {"video_id": "200", "title": citation},
+                {"video_id": "300", "title": citation},
+            ]}
+            pkg, fetch, _original = write_case(tmp, rows, items, statuses, top=top)
+            result = run_merge(pkg, fetch)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            got = {row["video_id"]: row for row in rows_of(load_payload(pkg))}
+            self.assertEqual(got["100"]["title"], citation)
+            self.assertEqual(got["200"]["title"], "诊断包里的完整引用标题…")
+            self.assertEqual(got["300"]["title"], "人工另写的标题")
+            self.assertEqual(got["100"]["citation_title"], citation)
+            report, md = report_of(pkg)
+            self.assertEqual(report["title_source"]["citation_title_count"], 2)
+            self.assertEqual(report["title_source"]["other_count"], 1)
+            self.assertEqual(report["title_source"]["other_ranks"], [5])
+            self.assertIn("诊断包引用标题", md)
+            self.assertIn("其他来源 rank：5", md)
+            self.assertIn("title 本轮不改", md)
+
+    def test_title_source_accepts_bare_prefix_and_whitespace(self):
+        citation_bare = "2026全屋净水前十品牌排行！新房装修怎么选？ 全屋净水系统怎么选？哪款全屋净水体验好？说说你家装了净水之后的感受吧！2026全屋净水十大品牌排行！前十名分别是：怡口净水ECOWATER、Honeyw"
+        title_bare = "2026全屋净水前十品牌排行"
+        citation_ws = "✨ 2026年1月净水品牌排行榜：  净水品牌怎么选？看段位图  喝进身体的水，决定了你90%的健康。 净水器不是家电，是家庭的“血液过滤系统”。 一张图带你看懂净水品牌真实段位，别再为智商税买单！"
+        title_ws = "✨ 2026年1月净水品牌排行榜： 净水品牌怎么选？看段位图 喝进身体的…"
+        title_placeholder = "（无短标题）"
+        citation_placeholder = "（无短标题）"
+        cases = [
+            (2, "200", title_ws, citation_ws),
+            (11, "1100", title_bare, citation_bare),
+            (17, "1700", title_placeholder, citation_placeholder),
+        ]
+
+        def blank_item(rank, video_id):
+            return base_item(
+                rank=rank, video_id=video_id, title=None, original_desc=None, hashtags=[], account=None,
+                account_name=None, follower_count=None, digg_count=None, collect_count=None,
+                share_count=None, comment_count=None, duration_sec=None, publish_date=None,
+                content_type=None, transcript=None, transcript_status=None,
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = [base_row(rank=rank, video_id=video_id, title=title, original_desc=None) for rank, video_id, title, _citation in cases]
+            items = [blank_item(rank, video_id) for rank, video_id, _title, _citation in cases]
+            statuses = [status_row(rank, video_id) for rank, video_id, _title, _citation in cases]
+            top = {"videos": [{"video_id": video_id, "title": citation} for _rank, video_id, _title, citation in cases]}
+            pkg, fetch, _original = write_case(tmp, rows, items, statuses, top=top)
+            result = run_merge(pkg, fetch)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            got = {row["video_id"]: row for row in rows_of(load_payload(pkg))}
+            self.assertEqual(got["200"]["title"], title_ws)
+            self.assertEqual(got["1100"]["title"], title_bare)
+            self.assertEqual(got["1700"]["title"], title_placeholder)
+            report, md = report_of(pkg)
+            self.assertEqual(report["title_source"]["citation_title_count"], 2)
+            self.assertEqual(report["title_source"]["other_count"], 1)
+            self.assertEqual(report["title_source"]["other_ranks"], [17])
+            self.assertIn("空白归一", md)
+            self.assertIn("（无短标题）", md)
+            self.assertIn("其他来源 rank：17", md)
 
 
 if __name__ == "__main__":
